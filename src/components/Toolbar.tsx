@@ -1,15 +1,19 @@
 import { useStore } from '../store';
 import type { Tool } from '../types';
+import { FURNITURE_META, FURNITURE_TYPES } from '../furniture';
 
-const TOOLS: { id: Tool; icon: string; label: string }[] = [
+const BASE_TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: 'select', icon: '🖱️', label: 'Выбор' },
   { id: 'wall', icon: '🧱', label: 'Стена' },
   { id: 'window', icon: '🪟', label: 'Окно' },
   { id: 'door', icon: '🚪', label: 'Дверь' },
   { id: 'passage', icon: '⬜', label: 'Проём' },
-  { id: 'desk', icon: '🖥️', label: 'Стол' },
-  { id: 'chair', icon: '🪑', label: 'Стул' },
   { id: 'note', icon: '📝', label: 'Надпись' },
+];
+
+const TOOLS: { id: Tool; icon: string; label: string }[] = [
+  ...BASE_TOOLS,
+  ...FURNITURE_TYPES.map((t) => ({ id: t as Tool, icon: FURNITURE_META[t].icon, label: FURNITURE_META[t].name })),
 ];
 
 export default function Toolbar() {

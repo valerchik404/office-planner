@@ -3,6 +3,7 @@ import { exportProject, useStore } from '../store';
 import type { ProjectData } from '../store';
 import { saveFile } from '../download';
 import { wallLen } from '../geometry';
+import { fpOf, metaOf } from '../furniture';
 
 function NumField({
   label, value, step = 0.1, min, max, onChange,
@@ -33,8 +34,53 @@ function NumField({
 }
 
 const KIND_NAMES = {
-  window: 'Окно', door: 'Дверь', passage: 'Проём', desk: 'Стол', chair: 'Стул',
+  window: 'Окно', door: 'Дверь', passage: 'Проём',
 } as const;
+
+function GroupSection() {
+  const multi = useStore((s) => s.multiSelect);
+  const furniture = useStore((s) => s.furniture);
+  const st = useStore.getState();
+  const items = furniture.filter((f) => multi.includes(f.id));
+  if (items.length < 2) return null;
+
+  const alignY = () => {
+    const y = items.reduce((s, f) => s + f.y, 0) / items.length;
+    for (const f of items) st.updateFurniture(f.id, { y });
+  };
+  const alignX = () => {
+    const x = items.reduce((s, f) => s + f.x, 0) / items.length;
+    for (const f of items) st.updateFurniture(f.id, { x });
+  };
+  const distributeX = () => {
+    const sorted = [...items].sort((a, b) => a.x - b.x);
+    const min = sorted[0].x;
+    const max = sorted[sorted.length - 1].x;
+    const step = (max - min) / (sorted.length - 1 || 1);
+    sorted.forEach((f, i) => st.updateFurniture(f.id, { x: min + step * i }));
+  };
+  const distributeY = () => {
+    const sorted = [...items].sort((a, b) => a.y - b.y);
+    const min = sorted[0].y;
+    const max = sorted[sorted.length - 1].y;
+    const step = (max - min) / (sorted.length - 1 || 1);
+    sorted.forEach((f, i) => st.updateFurniture(f.id, { y: min + step * i }));
+  };
+
+  return (
+    <>
+      <p className="obj-title">Группа: {items.length} шт.</p>
+      <div className="btn-row">
+        <button onClick={alignY} title="Одинаковый Y">⭤ В линию гориз.</button>
+        <button onClick={alignX} title="Одинаковый X">⭥ В линию верт.</button>
+        <button onClick={distributeX} title="Равные интервалы по горизонтали">⇹ Раздать гориз.</button>
+        <button onClick={distributeY} title="Равные интервалы по вертикали">⇳ Раздать верт.</button>
+      </div>
+      <p className="muted">Тащите мышью всю группу · R — повернуть · Ctrl+D — дублировать</p>
+      <button className="danger" onClick={() => st.deleteSelected()}>Удалить группу</button>
+    </>
+  );
+}
 
 function LabelSection({ id }: { id: string }) {
   const label = useStore((s) => (s.labels ?? []).find((l) => l.id === id));
@@ -172,13 +218,22 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
         )}
         {furn && (
           <>
-            <p className="obj-title">{KIND_NAMES[furn.type]}</p>
+            <p className="obj-title">{metaOf(furn.type).name}</p>
+            <NumField label="Ширина, м" value={fpOf(furn).w} step={0.05} min={0.2} max={10}
+              onChange={(v) => st.getState().updateFurniture(furn.id, { w: v })} />
+            <NumField label="Глубина, м" value={fpOf(furn).d} step={0.05} min={0.2} max={10}
+              onChange={(v) => st.getState().updateFurniture(furn.id, { d: v })} />
+            <NumField label="X, м" value={furn.x} step={0.05}
+              onChange={(v) => st.getState().updateFurniture(furn.id, { x: v })} />
+            <NumField label="Y, м" value={furn.y} step={0.05}
+              onChange={(v) => st.getState().updateFurniture(furn.id, { y: v })} />
             <NumField label="Поворот, °" value={furn.rotation} step={15} min={-360} max={360}
               onChange={(v) => st.getState().updateFurniture(furn.id, { rotation: ((v % 360) + 360) % 360 })} />
-            <p className="muted">R — повернуть, Del — удалить, мышью — двигать</p>
+            <p className="muted">R — повернуть, Del — удалить, Ctrl+D — дублировать</p>
             <button className="danger" onClick={() => st.getState().deleteFurniture(furn.id)}>Удалить</button>
           </>
         )}
+        <GroupSection />
       </section>
 
       <section>

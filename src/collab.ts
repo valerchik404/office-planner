@@ -30,6 +30,7 @@ interface PlanPayload {
   by: string;
   rev: number;
   data: {
+    v?: number; // версия формата: с 2 клиент умеет labels
     walls?: Wall[]; openings?: Opening[]; furniture?: Furniture[];
     labels?: PlanLabel[]; location?: GeoLocation;
   };
@@ -82,6 +83,7 @@ function pushPlan(): void {
     by: sessionId,
     rev: Date.now(),
     data: clean({
+      v: 2,
       walls: s.walls, openings: s.openings, furniture: s.furniture,
       labels: s.labels ?? [], location: s.location,
     }),
@@ -105,7 +107,11 @@ function applyPlan(p: PlanPayload): void {
     walls: p.data.walls ?? [],
     openings: p.data.openings ?? [],
     furniture: p.data.furniture ?? [],
-    labels: p.data.labels ?? [],
+    // план от старого клиента (без v) не должен стирать подписи;
+    // новый формат (v>=2) — источник истины, отсутствие = «подписей нет»
+    labels: (p.data.v ?? 0) >= 2
+      ? p.data.labels ?? []
+      : p.data.labels ?? useStore.getState().labels ?? [],
     location: p.data.location ?? useStore.getState().location,
   });
   applyingRemote = false;
@@ -224,6 +230,7 @@ function pushPlan0(roomId: string): void {
     by: sessionId,
     rev: Date.now(),
     data: clean({
+      v: 2,
       walls: s.walls, openings: s.openings, furniture: s.furniture,
       labels: s.labels ?? [], location: s.location,
     }),

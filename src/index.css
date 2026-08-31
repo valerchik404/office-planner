@@ -73,6 +73,10 @@ input[type='range'] { accent-color: #e8a33d; }
   background: #1e2026;
   border-right: 1px solid #2e3138;
   width: 84px;
+  overflow-y: auto;
+}
+.toolbar .tool:nth-child(7) {
+  margin-top: 12px;
 }
 .toolbar .tool {
   display: flex;

@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
-import type { Furniture, Pt, Wall } from '../types';
+import type { Pt, Wall } from '../types';
 import { openingSpan, projectOnWall, snap, wallAngle, wallLen } from '../geometry';
 import { redo, undo } from '../history';
-
-const FOOTPRINT: Record<Furniture['type'], { w: number; d: number }> = {
-  desk: { w: 1.4, d: 0.7 },
-  chair: { w: 0.45, d: 0.45 },
-};
+import { FURNITURE_TYPES, fpOf, metaOf } from '../furniture';
+import { computeSunHours, sunHoursColor } from '../sunlight';
+import type { FurnitureType } from '../types';
 
 const OPENING_DEFAULTS = {
   window: { width: 1.5, sillHeight: 0.8, height: 1.6 },
@@ -18,9 +16,11 @@ const OPENING_DEFAULTS = {
 type Drag =
   | { kind: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { kind: 'furniture'; id: string; dx: number; dy: number }
+  | { kind: 'group'; items: { id: string; dx: number; dy: number }[] }
   | { kind: 'label'; id: string; dx: number; dy: number }
   | { kind: 'endpoint'; wallId: string; end: 'a' | 'b' }
-  | { kind: 'opening'; id: string; wallId: string };
+  | { kind: 'opening'; id: string; wallId: string }
+  | { kind: 'marquee' };
 
 export default function Editor2D() {
   const walls = useStore((s) => s.walls);
@@ -28,9 +28,14 @@ export default function Editor2D() {
   const furniture = useStore((s) => s.furniture);
   const labels = useStore((s) => s.labels) ?? [];
   const underlay = useStore((s) => s.underlay);
-  const northAngle = useStore((s) => s.location.northAngle);
+  const location = useStore((s) => s.location);
+  const dateISO = useStore((s) => s.sun.dateISO);
   const tool = useStore((s) => s.tool);
   const selection = useStore((s) => s.selection);
+  const multiSelect = useStore((s) => s.multiSelect);
+  const readOnly = useStore((s) => s.readOnly);
+  const showDims = useStore((s) => s.showDims);
+  const showSun = useStore((s) => s.showSun);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -39,9 +44,16 @@ export default function Editor2D() {
   const [chainStart, setChainStart] = useState<Pt | null>(null);
   const [hoverPt, setHoverPt] = useState<Pt | null>(null);
   const [lenInput, setLenInput] = useState('');
+  const [marquee, setMarquee] = useState<{ a: Pt; b: Pt } | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  const sunHours = useMemo(() => {
+    if (!showSun) return null;
+    const seats = furniture.filter((f) => f.type === 'desk' || f.type === 'meeting');
+    return computeSunHours(seats, walls, openings, location, dateISO);
+  }, [showSun, furniture, walls, openings, location, dateISO]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -54,7 +66,7 @@ export default function Editor2D() {
     return () => ro.disconnect();
   }, []);
 
-  // Колесо мыши: масштаб к курсору (нативный слушатель, чтобы preventDefault работал)
+  // Колесо мыши: масштаб к курсору
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -73,6 +85,12 @@ export default function Editor2D() {
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
+
+  // смена инструмента сбрасывает начатую стену и набор длины
+  useEffect(() => {
+    setChainStart(null);
+    setLenInput('');
+  }, [tool]);
 
   const capture = (pointerId: number) => {
     try {
@@ -115,7 +133,7 @@ export default function Editor2D() {
     }
     for (let i = furniture.length - 1; i >= 0; i--) {
       const f = furniture[i];
-      const fp = FOOTPRINT[f.type];
+      const fp = fpOf(f);
       const a = (-f.rotation * Math.PI) / 180;
       const lx = (p.x - f.x) * Math.cos(a) - (p.y - f.y) * Math.sin(a);
       const ly = (p.x - f.x) * Math.sin(a) + (p.y - f.y) * Math.cos(a);
@@ -137,6 +155,37 @@ export default function Editor2D() {
     return null;
   };
 
+  /** Прилипание мебели к ближайшей стене: спинкой к стене, вплотную. */
+  const wallSnap = (p: Pt, depth: number): { x: number; y: number; rotation: number } | null => {
+    let best: { w: Wall; pr: { dist: number; t: number } } | null = null;
+    for (const w of walls) {
+      const pr = projectOnWall(w, p);
+      const reach = w.thickness / 2 + depth / 2 + 0.22;
+      if (pr.dist < reach && (!best || pr.dist < best.pr.dist)) best = { w, pr };
+    }
+    if (!best) return null;
+    const w = best.w;
+    const L = wallLen(w);
+    if (L < 0.05) return null;
+    const dx = (w.b.x - w.a.x) / L;
+    const dy = (w.b.y - w.a.y) / L;
+    const cross = dx * (p.y - w.a.y) - dy * (p.x - w.a.x);
+    const side = cross >= 0 ? 1 : -1;
+    const nx = -dy * side;
+    const ny = dx * side;
+    const off = w.thickness / 2 + depth / 2 + 0.01;
+    const base = {
+      x: w.a.x + dx * best.pr.t,
+      y: w.a.y + dy * best.pr.t,
+    };
+    const angleDeg = (wallAngle(w) * 180) / Math.PI;
+    return {
+      x: base.x + nx * off,
+      y: base.y + ny * off,
+      rotation: ((side > 0 ? angleDeg + 180 : angleDeg) + 360) % 360,
+    };
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     const st = useStore.getState();
     const p = s2w(e.clientX, e.clientY);
@@ -150,7 +199,6 @@ export default function Editor2D() {
     capture(e.pointerId);
 
     if (st.readOnly) {
-      // режим просмотра: только выбор для инспектора и панорама
       const hit = hitTest(p);
       st.setSelection(hit ? { kind: hit.kind, id: hit.id } : null);
       if (!hit) dragRef.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy };
@@ -162,11 +210,9 @@ export default function Editor2D() {
       setLenInput('');
       if (!chainStart) {
         setChainStart(sp);
-      } else {
-        if (Math.hypot(sp.x - chainStart.x, sp.y - chainStart.y) > 0.05) {
-          st.addWall({ a: chainStart, b: sp, thickness: 0.2, height: 3 });
-          setChainStart(sp);
-        }
+      } else if (Math.hypot(sp.x - chainStart.x, sp.y - chainStart.y) > 0.05) {
+        st.addWall({ a: chainStart, b: sp, thickness: 0.2, height: 3 });
+        setChainStart(sp);
       }
       return;
     }
@@ -187,24 +233,37 @@ export default function Editor2D() {
       }
       return;
     }
-    if (tool === 'desk' || tool === 'chair') {
+    if ((FURNITURE_TYPES as string[]).includes(tool)) {
       const sp = { x: snap(p.x, 0.05), y: snap(p.y, 0.05) };
-      const id = st.addFurniture({ type: tool, x: sp.x, y: sp.y, rotation: 0 });
+      const id = st.addFurniture({ type: tool as FurnitureType, x: sp.x, y: sp.y, rotation: 0 });
       st.setSelection({ kind: 'furniture', id });
       return;
     }
     if (tool === 'note') {
       const sp = { x: snap(p.x, 0.05), y: snap(p.y, 0.05) };
       const id = st.addLabel({ text: 'Надпись', x: sp.x, y: sp.y, rotation: 0, size: 0.4 });
-      st.setTool('select'); // сразу к редактированию текста в инспекторе
+      st.setTool('select');
       st.setSelection({ kind: 'label', id });
       return;
     }
+
     // select
     const hit = hitTest(p);
     if (!hit) {
       st.setSelection(null);
-      dragRef.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy };
+      dragRef.current = { kind: 'marquee' };
+      setMarquee({ a: p, b: p });
+      return;
+    }
+    if (hit.kind === 'furniture' && multiSelect.includes(hit.id)) {
+      // тащим всю группу
+      dragRef.current = {
+        kind: 'group',
+        items: multiSelect
+          .map((id) => furniture.find((f) => f.id === id))
+          .filter((f): f is NonNullable<typeof f> => Boolean(f))
+          .map((f) => ({ id: f.id, dx: f.x - p.x, dy: f.y - p.y })),
+      };
       return;
     }
     st.setSelection({ kind: hit.kind, id: hit.id });
@@ -232,16 +291,24 @@ export default function Editor2D() {
         cx: drag.cx - (e.clientX - drag.sx) / v.scale,
         cy: drag.cy - (e.clientY - drag.sy) / v.scale,
       }));
+    } else if (drag.kind === 'marquee') {
+      setMarquee((m) => (m ? { a: m.a, b: p } : null));
     } else if (drag.kind === 'furniture') {
-      st.updateFurniture(drag.id, {
-        x: snap(p.x + drag.dx, 0.05),
-        y: snap(p.y + drag.dy, 0.05),
-      });
+      const f = st.furniture.find((x) => x.id === drag.id);
+      if (!f) return;
+      const raw = { x: p.x + drag.dx, y: p.y + drag.dy };
+      const snapped = wallSnap(raw, fpOf(f).d);
+      if (snapped) {
+        st.updateFurniture(drag.id, snapped);
+      } else {
+        st.updateFurniture(drag.id, { x: snap(raw.x, 0.05), y: snap(raw.y, 0.05) });
+      }
+    } else if (drag.kind === 'group') {
+      for (const it of drag.items) {
+        st.updateFurniture(it.id, { x: snap(p.x + it.dx, 0.05), y: snap(p.y + it.dy, 0.05) });
+      }
     } else if (drag.kind === 'label') {
-      st.updateLabel(drag.id, {
-        x: snap(p.x + drag.dx, 0.05),
-        y: snap(p.y + drag.dy, 0.05),
-      });
+      st.updateLabel(drag.id, { x: snap(p.x + drag.dx, 0.05), y: snap(p.y + drag.dy, 0.05) });
     } else if (drag.kind === 'endpoint') {
       const sp = snapPoint(p, false);
       st.updateWall(drag.wallId, { [drag.end]: sp } as Partial<Wall>);
@@ -258,6 +325,20 @@ export default function Editor2D() {
   };
 
   const onPointerUp = () => {
+    const drag = dragRef.current;
+    if (drag?.kind === 'marquee' && marquee) {
+      const x0 = Math.min(marquee.a.x, marquee.b.x);
+      const x1 = Math.max(marquee.a.x, marquee.b.x);
+      const y0 = Math.min(marquee.a.y, marquee.b.y);
+      const y1 = Math.max(marquee.a.y, marquee.b.y);
+      if (x1 - x0 > 0.1 || y1 - y0 > 0.1) {
+        const ids = furniture
+          .filter((f) => f.x >= x0 && f.x <= x1 && f.y >= y0 && f.y <= y1)
+          .map((f) => f.id);
+        if (ids.length > 0) useStore.getState().setMultiSelect(ids);
+      }
+      setMarquee(null);
+    }
     dragRef.current = null;
   };
 
@@ -293,7 +374,6 @@ export default function Editor2D() {
       }
       if (st.readOnly) return;
 
-      // отмена / повтор / дублирование
       if (e.ctrlKey || e.metaKey) {
         const k = e.key.toLowerCase();
         if (k === 'z' || k === 'я') {
@@ -309,11 +389,24 @@ export default function Editor2D() {
         }
         if (k === 'd' || k === 'в') {
           e.preventDefault();
+          if (st.multiSelect.length > 0) {
+            const ids: string[] = [];
+            for (const id of st.multiSelect) {
+              const f = st.furniture.find((x) => x.id === id);
+              if (f) {
+                ids.push(st.addFurniture({
+                  type: f.type, x: f.x + 0.4, y: f.y + 0.4, rotation: f.rotation, w: f.w, d: f.d,
+                }));
+              }
+            }
+            st.setMultiSelect(ids);
+            return;
+          }
           const sel = st.selection;
           if (sel?.kind === 'furniture') {
             const f = st.furniture.find((x) => x.id === sel.id);
             if (f) {
-              const id = st.addFurniture({ type: f.type, x: f.x + 0.4, y: f.y + 0.4, rotation: f.rotation });
+              const id = st.addFurniture({ type: f.type, x: f.x + 0.4, y: f.y + 0.4, rotation: f.rotation, w: f.w, d: f.d });
               st.setSelection({ kind: 'furniture', id });
             }
           } else if (sel?.kind === 'label') {
@@ -328,7 +421,6 @@ export default function Editor2D() {
         return;
       }
 
-      // набор длины при рисовании стены
       if (tool === 'wall' && chainStart) {
         if (/^[0-9]$/.test(e.key) || e.key === '.' || e.key === ',') {
           setLenInput((v) => (v + (e.key === ',' ? '.' : e.key)).slice(0, 8));
@@ -348,13 +440,21 @@ export default function Editor2D() {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         st.deleteSelected();
       } else if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') {
+        const delta = e.shiftKey ? -15 : 15;
+        if (st.multiSelect.length > 0) {
+          for (const id of st.multiSelect) {
+            const f = st.furniture.find((x) => x.id === id);
+            if (f) st.updateFurniture(id, { rotation: (f.rotation + delta + 360) % 360 });
+          }
+          return;
+        }
         const sel = st.selection;
         if (sel?.kind === 'furniture') {
           const f = st.furniture.find((x) => x.id === sel.id);
-          if (f) st.updateFurniture(f.id, { rotation: (f.rotation + (e.shiftKey ? -15 : 15) + 360) % 360 });
+          if (f) st.updateFurniture(f.id, { rotation: (f.rotation + delta + 360) % 360 });
         } else if (sel?.kind === 'label') {
           const l = (st.labels ?? []).find((x) => x.id === sel.id);
-          if (l) st.updateLabel(l.id, { rotation: (l.rotation + (e.shiftKey ? -15 : 15) + 360) % 360 });
+          if (l) st.updateLabel(l.id, { rotation: (l.rotation + delta + 360) % 360 });
         }
       }
     };
@@ -376,18 +476,10 @@ export default function Editor2D() {
     return lines;
   }, [view, size]);
 
-  const px = (n: number) => n / view.scale; // n пикселей в мировых единицах
+  const px = (n: number) => n / view.scale;
 
-  const readOnly = useStore((s) => s.readOnly);
-  const showDims = useStore((s) => s.showDims);
   const selectedWall =
     selection?.kind === 'wall' && !readOnly ? walls.find((w) => w.id === selection.id) : null;
-
-  // смена инструмента сбрасывает начатую стену и набор длины
-  useEffect(() => {
-    setChainStart(null);
-    setLenInput('');
-  }, [tool]);
 
   return (
     <div ref={wrapRef} className="editor2d">
@@ -403,13 +495,11 @@ export default function Editor2D() {
         style={{ touchAction: 'none', display: 'block', background: '#f4f4ee' }}
       >
         <g transform={`translate(${size.w / 2 - view.cx * view.scale}, ${size.h / 2 - view.cy * view.scale}) scale(${view.scale})`}>
-          {/* сетка */}
           {grid.map((l, i) => (
             <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
               stroke={l.major ? '#d3d3c9' : '#e4e4dc'} strokeWidth={px(1)} />
           ))}
 
-          {/* подложка */}
           {underlay.dataUrl && (
             <image
               href={underlay.dataUrl}
@@ -461,28 +551,61 @@ export default function Editor2D() {
 
           {/* мебель */}
           {furniture.map((f) => {
-            const fp = FOOTPRINT[f.type];
+            const fp = fpOf(f);
+            const meta = metaOf(f.type);
             const sel = selection?.kind === 'furniture' && selection.id === f.id;
+            const inGroup = multiSelect.includes(f.id);
+            const hours = sunHours?.get(f.id);
+            const fill = hours !== undefined ? sunHoursColor(hours) : meta.fill;
+            const stroke = sel || inGroup ? '#e07a3f' : meta.stroke;
+            const sw = px(sel || inGroup ? 2.5 : 1.2);
             return (
               <g key={f.id} transform={`translate(${f.x},${f.y}) rotate(${f.rotation})`}>
-                {f.type === 'desk' ? (
+                {f.type === 'plant' ? (
                   <>
-                    <rect x={-fp.w / 2} y={-fp.d / 2} width={fp.w} height={fp.d} rx={0.03}
-                      fill="#c9a36e" stroke={sel ? '#e07a3f' : '#8a6d43'} strokeWidth={px(sel ? 2.5 : 1.2)} />
-                    <line x1={-fp.w / 2 + 0.1} y1={fp.d / 2 - 0.08} x2={fp.w / 2 - 0.1} y2={fp.d / 2 - 0.08}
-                      stroke="#8a6d43" strokeWidth={px(1)} />
+                    <circle r={fp.w / 2} fill={fill} stroke={stroke} strokeWidth={sw} />
+                    <circle r={fp.w / 4} fill="none" stroke={meta.stroke} strokeWidth={px(1)} />
                   </>
                 ) : (
+                  <rect x={-fp.w / 2} y={-fp.d / 2} width={fp.w} height={fp.d}
+                    rx={f.type === 'chair' || f.type === 'sofa' ? 0.08 : 0.03}
+                    fill={fill} stroke={stroke} strokeWidth={sw}
+                    strokeDasharray={f.type === 'box' ? `${px(5)} ${px(4)}` : undefined} />
+                )}
+                {(f.type === 'desk' || f.type === 'meeting') && (
+                  <line x1={-fp.w / 2 + 0.1} y1={fp.d / 2 - 0.08} x2={fp.w / 2 - 0.1} y2={fp.d / 2 - 0.08}
+                    stroke={meta.stroke} strokeWidth={px(1)} />
+                )}
+                {(f.type === 'chair' || f.type === 'sofa') && (
+                  <rect x={-fp.w / 2} y={fp.d / 2 - 0.08} width={fp.w} height={0.1} rx={0.04}
+                    fill={meta.stroke} />
+                )}
+                {f.type === 'sofa' && (
                   <>
-                    <rect x={-fp.w / 2} y={-fp.d / 2} width={fp.w} height={fp.d} rx={0.08}
-                      fill="#7d9b77" stroke={sel ? '#e07a3f' : '#55704f'} strokeWidth={px(sel ? 2.5 : 1.2)} />
-                    <rect x={-fp.w / 2} y={fp.d / 2 - 0.07} width={fp.w} height={0.09} rx={0.04}
-                      fill="#55704f" />
+                    <rect x={-fp.w / 2} y={-fp.d / 2} width={0.12} height={fp.d} fill={meta.stroke} opacity={0.6} />
+                    <rect x={fp.w / 2 - 0.12} y={-fp.d / 2} width={0.12} height={fp.d} fill={meta.stroke} opacity={0.6} />
                   </>
+                )}
+                {f.type === 'cabinet' && (
+                  <line x1={-fp.w / 2} y1={-fp.d / 2} x2={fp.w / 2} y2={fp.d / 2}
+                    stroke={meta.stroke} strokeWidth={px(1)} />
                 )}
               </g>
             );
           })}
+
+          {/* часы солнца на столах */}
+          {sunHours &&
+            furniture
+              .filter((f) => sunHours.has(f.id))
+              .map((f) => (
+                <text key={`sun-${f.id}`} x={f.x} y={f.y}
+                  fontSize={px(12)} fontWeight={700} fill="#3a3428"
+                  textAnchor="middle" dominantBaseline="middle"
+                  style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                  {(sunHours.get(f.id) ?? 0).toFixed(1)} ч
+                </text>
+              ))}
 
           {/* надписи */}
           {labels.map((l) => {
@@ -555,6 +678,20 @@ export default function Editor2D() {
             <circle cx={hoverPt.x} cy={hoverPt.y} r={px(4)} fill="#e07a3f" />
           )}
 
+          {/* рамка выделения */}
+          {marquee && (
+            <rect
+              x={Math.min(marquee.a.x, marquee.b.x)}
+              y={Math.min(marquee.a.y, marquee.b.y)}
+              width={Math.abs(marquee.b.x - marquee.a.x)}
+              height={Math.abs(marquee.b.y - marquee.a.y)}
+              fill="rgba(224, 122, 63, 0.08)"
+              stroke="#e07a3f"
+              strokeWidth={px(1.5)}
+              strokeDasharray={`${px(5)} ${px(4)}`}
+            />
+          )}
+
           {/* ручки концов выбранной стены */}
           {selectedWall &&
             (['a', 'b'] as const).map((end) => (
@@ -573,11 +710,10 @@ export default function Editor2D() {
         </g>
       </svg>
 
-      {/* компас */}
       <div className="compass" title="Направление на север">
         <svg width="44" height="44" viewBox="-22 -22 44 44">
           <circle r="20" fill="rgba(255,255,255,0.85)" stroke="#bbb" />
-          <g transform={`rotate(${northAngle})`}>
+          <g transform={`rotate(${location.northAngle})`}>
             <path d="M 0 -16 L 5 4 L 0 0 L -5 4 Z" fill="#d33" />
             <text y="-8" fontSize="9" textAnchor="middle" fill="#fff" fontWeight="bold">С</text>
           </g>
@@ -593,11 +729,13 @@ export default function Editor2D() {
             ? 'Клик — точка · наберите длину (напр. 4.25) и Enter · Esc — закончить'
             : 'Клик — начать стену'
           : tool === 'select'
-            ? 'Клик — выбрать · перетаскивание — двигать · R — повернуть · Del — удалить'
-            : tool === 'desk' || tool === 'chair'
-              ? 'Клик — поставить'
-              : tool === 'note'
-                ? 'Клик — поставить надпись (текст меняется справа)'
+            ? multiSelect.length > 0
+              ? `Выбрано: ${multiSelect.length} · тащите группу · R — повернуть · Ctrl+D — дублировать · Del — удалить`
+              : 'Клик — выбрать · рамка — группа · R — повернуть · Del — удалить'
+            : tool === 'note'
+              ? 'Клик — поставить надпись (текст меняется справа)'
+              : (FURNITURE_TYPES as string[]).includes(tool)
+                ? 'Клик — поставить · рядом со стеной — прилипнет к ней'
                 : 'Клик по стене — добавить проём')}
         {hoverPt && `  |  x: ${hoverPt.x.toFixed(2)}  y: ${hoverPt.y.toFixed(2)}`}
       </div>

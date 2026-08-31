@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
-import { fmtTime, makeDate, sunDirection, sunTimes } from '../sun';
+import { cityTimezone, fmtTime, makeDate, sunDirection, sunTimes } from '../sun';
 
 const SEASONS = [
   { label: 'Зима', date: '-12-21' },
@@ -38,7 +38,8 @@ export default function SunControls() {
     };
   }, [playing]);
 
-  const date = makeDate(sun.dateISO, sun.minutes);
+  const tz = cityTimezone(location.lat, location.lng);
+  const date = makeDate(sun.dateISO, sun.minutes, location.lat, location.lng);
   const times = sunTimes(date, location.lat, location.lng);
   const pos = sunDirection(date, location.lat, location.lng, location.northAngle);
   const altDeg = (pos.altitude * 180) / Math.PI;
@@ -85,8 +86,11 @@ export default function SunControls() {
       </div>
 
       <div className="sun-group sun-info">
-        <span title="Восход">🌅 {fmtTime(times.sunrise)}</span>
-        <span title="Закат">🌇 {fmtTime(times.sunset)}</span>
+        <span title="Восход">🌅 {fmtTime(times.sunrise, tz)}</span>
+        <span title="Закат">🌇 {fmtTime(times.sunset, tz)}</span>
+        <span className="muted" title={`Время — местное для точки на карте (${tz})`}>
+          {tz.split('/').pop()?.replace(/_/g, ' ')}
+        </span>
         <span title="Высота солнца над горизонтом">
           ☀ {altDeg > 0 ? `${altDeg.toFixed(0)}°` : 'ночь'}
         </span>

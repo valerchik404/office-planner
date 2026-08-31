@@ -23,7 +23,7 @@ export interface Opening {
   height: number; // м, высота проёма
 }
 
-export type FurnitureType = 'desk' | 'chair';
+export type FurnitureType = 'desk' | 'meeting' | 'chair' | 'sofa' | 'cabinet' | 'plant' | 'box';
 
 export interface Furniture {
   id: string;
@@ -31,6 +31,8 @@ export interface Furniture {
   x: number;
   y: number;
   rotation: number; // градусы, по часовой на плане
+  w?: number; // своя ширина, м (иначе — по типу)
+  d?: number; // своя глубина, м
 }
 
 export interface PlanLabel {
@@ -58,7 +60,7 @@ export interface GeoLocation {
   label?: string; // человекочитаемое название места
 }
 
-export type Tool = 'select' | 'wall' | 'window' | 'door' | 'passage' | 'desk' | 'chair' | 'note';
+export type Tool = 'select' | 'wall' | 'window' | 'door' | 'passage' | 'note' | FurnitureType;
 export type ViewMode = '2d' | '3d' | 'split';
 
 export interface Selection {

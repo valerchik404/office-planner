@@ -19,10 +19,14 @@ interface AppState extends ProjectData {
   tool: Tool;
   viewMode: ViewMode;
   selection: Selection | null;
+  multiSelect: string[]; // групповое выделение мебели
   readOnly: boolean;
   showDims: boolean;
+  showSun: boolean;
 
   toggleDims: () => void;
+  toggleSun: () => void;
+  setMultiSelect: (ids: string[]) => void;
   setReadOnly: (v: boolean) => void;
   setTool: (t: Tool) => void;
   setViewMode: (m: ViewMode) => void;
@@ -116,14 +120,18 @@ export const useStore = create<AppState>()(
       tool: 'select',
       viewMode: 'split',
       selection: null,
+      multiSelect: [],
       readOnly: false,
       showDims: false,
+      showSun: false,
 
       toggleDims: () => set((s) => ({ showDims: !s.showDims })),
+      toggleSun: () => set((s) => ({ showSun: !s.showSun })),
+      setMultiSelect: (multiSelect) => set({ multiSelect, selection: null }),
       setReadOnly: (readOnly) => set({ readOnly, tool: 'select' }),
-      setTool: (tool) => set({ tool, selection: null }),
+      setTool: (tool) => set({ tool, selection: null, multiSelect: [] }),
       setViewMode: (viewMode) => set({ viewMode }),
-      setSelection: (selection) => set({ selection }),
+      setSelection: (selection) => set({ selection, multiSelect: [] }),
 
       addWall: (w) => {
         const id = uid();
@@ -174,6 +182,14 @@ export const useStore = create<AppState>()(
       setSun: (patch) => set((s) => ({ sun: { ...s.sun, ...patch } })),
 
       deleteSelected: () => {
+        const multi = get().multiSelect;
+        if (multi.length > 0) {
+          set((s) => ({
+            furniture: s.furniture.filter((f) => !multi.includes(f.id)),
+            multiSelect: [],
+          }));
+          return;
+        }
         const sel = get().selection;
         if (!sel) return;
         if (sel.kind === 'wall') get().deleteWall(sel.id);

@@ -5,6 +5,7 @@ import { useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { makeDate, sunDirection } from '../sun';
 import { openingSpan, wallAngle, wallBoxes, wallLen, wallsBBox } from '../geometry';
+import { fpOf } from '../furniture';
 import type { Furniture, Opening, Wall } from '../types';
 
 function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
@@ -66,15 +67,20 @@ function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
 
 function FurnitureMesh({ f }: { f: Furniture }) {
   const rot = (-f.rotation * Math.PI) / 180;
-  if (f.type === 'desk') {
+  const { w, d } = fpOf(f);
+  const pos: [number, number, number] = [f.x, 0, f.y];
+
+  if (f.type === 'desk' || f.type === 'meeting') {
+    const lx = w / 2 - 0.06;
+    const lz = d / 2 - 0.06;
     return (
-      <group position={[f.x, 0, f.y]} rotation={[0, rot, 0]}>
+      <group position={pos} rotation={[0, rot, 0]}>
         <mesh castShadow receiveShadow position={[0, 0.73, 0]}>
-          <boxGeometry args={[1.4, 0.04, 0.7]} />
+          <boxGeometry args={[w, 0.04, d]} />
           <meshStandardMaterial color="#b98d5f" roughness={0.7} />
         </mesh>
-        {[[-0.65, -0.3], [0.65, -0.3], [-0.65, 0.3], [0.65, 0.3]].map(([lx, lz], i) => (
-          <mesh key={i} castShadow position={[lx, 0.355, lz]}>
+        {[[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].map(([x, z], i) => (
+          <mesh key={i} castShadow position={[x, 0.355, z]}>
             <boxGeometry args={[0.05, 0.71, 0.05]} />
             <meshStandardMaterial color="#6d6d6d" roughness={0.6} metalness={0.3} />
           </mesh>
@@ -82,22 +88,79 @@ function FurnitureMesh({ f }: { f: Furniture }) {
       </group>
     );
   }
-  return (
-    <group position={[f.x, 0, f.y]} rotation={[0, rot, 0]}>
-      <mesh castShadow position={[0, 0.45, 0]}>
-        <boxGeometry args={[0.45, 0.06, 0.45]} />
-        <meshStandardMaterial color="#5f7d59" roughness={0.8} />
-      </mesh>
-      <mesh castShadow position={[0, 0.72, 0.2]}>
-        <boxGeometry args={[0.45, 0.55, 0.05]} />
-        <meshStandardMaterial color="#5f7d59" roughness={0.8} />
-      </mesh>
-      {[[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]].map(([lx, lz], i) => (
-        <mesh key={i} castShadow position={[lx, 0.21, lz]}>
-          <boxGeometry args={[0.04, 0.42, 0.04]} />
-          <meshStandardMaterial color="#4a4a4a" metalness={0.4} />
+  if (f.type === 'chair') {
+    const lx = w / 2 - 0.05;
+    const lz = d / 2 - 0.05;
+    return (
+      <group position={pos} rotation={[0, rot, 0]}>
+        <mesh castShadow position={[0, 0.45, 0]}>
+          <boxGeometry args={[w, 0.06, d]} />
+          <meshStandardMaterial color="#5f7d59" roughness={0.8} />
         </mesh>
-      ))}
+        <mesh castShadow position={[0, 0.72, d / 2 - 0.025]}>
+          <boxGeometry args={[w, 0.55, 0.05]} />
+          <meshStandardMaterial color="#5f7d59" roughness={0.8} />
+        </mesh>
+        {[[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].map(([x, z], i) => (
+          <mesh key={i} castShadow position={[x, 0.21, z]}>
+            <boxGeometry args={[0.04, 0.42, 0.04]} />
+            <meshStandardMaterial color="#4a4a4a" metalness={0.4} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+  if (f.type === 'sofa') {
+    return (
+      <group position={pos} rotation={[0, rot, 0]}>
+        <mesh castShadow receiveShadow position={[0, 0.22, 0]}>
+          <boxGeometry args={[w, 0.44, d]} />
+          <meshStandardMaterial color="#7d5f74" roughness={0.9} />
+        </mesh>
+        <mesh castShadow position={[0, 0.55, d / 2 - 0.09]}>
+          <boxGeometry args={[w, 0.5, 0.18]} />
+          <meshStandardMaterial color="#7d5f74" roughness={0.9} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} castShadow position={[s * (w / 2 - 0.08), 0.5, 0]}>
+            <boxGeometry args={[0.16, 0.25, d]} />
+            <meshStandardMaterial color="#6e5468" roughness={0.9} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+  if (f.type === 'cabinet') {
+    return (
+      <group position={pos} rotation={[0, rot, 0]}>
+        <mesh castShadow receiveShadow position={[0, 0.95, 0]}>
+          <boxGeometry args={[w, 1.9, d]} />
+          <meshStandardMaterial color="#8f8f98" roughness={0.7} />
+        </mesh>
+      </group>
+    );
+  }
+  if (f.type === 'plant') {
+    return (
+      <group position={pos}>
+        <mesh castShadow position={[0, 0.18, 0]}>
+          <cylinderGeometry args={[w * 0.22, w * 0.28, 0.36, 12]} />
+          <meshStandardMaterial color="#8a5a3a" roughness={0.9} />
+        </mesh>
+        <mesh castShadow position={[0, 0.75, 0]}>
+          <sphereGeometry args={[w * 0.5, 12, 10]} />
+          <meshStandardMaterial color="#3f6f3f" roughness={0.95} />
+        </mesh>
+      </group>
+    );
+  }
+  // box и всё неизвестное
+  return (
+    <group position={pos} rotation={[0, rot, 0]}>
+      <mesh castShadow receiveShadow position={[0, 0.375, 0]}>
+        <boxGeometry args={[w, 0.75, d]} />
+        <meshStandardMaterial color="#a3a398" roughness={0.85} />
+      </mesh>
     </group>
   );
 }
@@ -155,7 +218,7 @@ function Scene() {
   const radius = Math.max(extentX, extentZ) / 2 + 6;
 
   const sun = useMemo(() => {
-    const date = makeDate(sunState.dateISO, sunState.minutes);
+    const date = makeDate(sunState.dateISO, sunState.minutes, location.lat, location.lng);
     return sunDirection(date, location.lat, location.lng, location.northAngle);
   }, [sunState, location]);
 
