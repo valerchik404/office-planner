@@ -95,11 +95,11 @@ function FurnitureMesh({ f }: { f: Furniture }) {
     const seatH = f.type === 'armchair' ? 0.4 : 0.45;
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow position={[0, seatH, 0]}>
+        <mesh castShadow receiveShadow position={[0, seatH, 0]}>
           <boxGeometry args={[w, f.type === 'armchair' ? 0.2 : 0.06, d]} />
           <meshStandardMaterial color="#5f7d59" roughness={0.85} />
         </mesh>
-        <mesh castShadow position={[0, seatH + 0.3, d / 2 - 0.05]}>
+        <mesh castShadow receiveShadow position={[0, seatH + 0.3, d / 2 - 0.05]}>
           <boxGeometry args={[w, 0.55, 0.1]} />
           <meshStandardMaterial color="#5f7d59" roughness={0.85} />
         </mesh>
@@ -127,7 +127,7 @@ function FurnitureMesh({ f }: { f: Furniture }) {
           <boxGeometry args={[w, 0.44, d]} />
           <meshStandardMaterial color="#7d5f74" roughness={0.9} />
         </mesh>
-        <mesh castShadow position={[0, 0.55, d / 2 - 0.09]}>
+        <mesh castShadow receiveShadow position={[0, 0.55, d / 2 - 0.09]}>
           <boxGeometry args={[w, 0.5, 0.18]} />
           <meshStandardMaterial color="#7d5f74" roughness={0.9} />
         </mesh>
@@ -222,7 +222,8 @@ function Lamps({ lamps }: { lamps: Furniture[] }) {
   );
 }
 
-/** Крыша: видимо прозрачная, но для солнца — глухая (даёт полную тень). */
+/** Крыша: видимо прозрачная, но для солнца глухая. Строго по стенам, без свеса —
+ *  иначе козырёк срезал бы лучи, идущие в окна при высоком солнце. */
 function Roof({
   center, sizeX, sizeZ, height,
 }: {
@@ -375,8 +376,8 @@ function Scene() {
       {bbox && showRoof && (
         <Roof
           center={center}
-          sizeX={extentX + 0.8}
-          sizeZ={extentZ + 0.8}
+          sizeX={Math.max(0.5, extentX)}
+          sizeZ={Math.max(0.5, extentZ)}
           height={ceilH}
         />
       )}
