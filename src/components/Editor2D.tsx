@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import type { Furniture, Pt, Wall } from '../types';
 import { openingSpan, projectOnWall, snap, wallAngle, wallLen } from '../geometry';
+import { redo, undo } from '../history';
 
 const FOOTPRINT: Record<Furniture['type'], { w: number; d: number }> = {
   desk: { w: 1.4, d: 0.7 },
@@ -37,6 +38,7 @@ export default function Editor2D() {
   const [view, setView] = useState({ cx: 6, cy: 4, scale: 55 });
   const [chainStart, setChainStart] = useState<Pt | null>(null);
   const [hoverPt, setHoverPt] = useState<Pt | null>(null);
+  const [lenInput, setLenInput] = useState('');
   const dragRef = useRef<Drag | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -157,6 +159,7 @@ export default function Editor2D() {
 
     if (tool === 'wall') {
       const sp = snapPoint(p, true);
+      setLenInput('');
       if (!chainStart) {
         setChainStart(sp);
       } else {
@@ -258,18 +261,91 @@ export default function Editor2D() {
     dragRef.current = null;
   };
 
+  // Точная длина стены с клавиатуры: направление мышью, число + Enter
+  const commitTypedLength = (): boolean => {
+    const L = parseFloat(lenInput.replace(',', '.'));
+    if (!chainStart || !hoverPt || !Number.isFinite(L) || L < 0.02) return false;
+    const dx = hoverPt.x - chainStart.x;
+    const dy = hoverPt.y - chainStart.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.001) return false;
+    const b = { x: chainStart.x + (dx / d) * L, y: chainStart.y + (dy / d) * L };
+    useStore.getState().addWall({ a: chainStart, b, thickness: 0.2, height: 3 });
+    setChainStart(b);
+    setLenInput('');
+    return true;
+  };
+
   // Клавиатура
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       const st = useStore.getState();
+
       if (e.key === 'Escape') {
-        setChainStart(null);
-        st.setSelection(null);
-      } else if (st.readOnly) {
+        if (lenInput) setLenInput('');
+        else {
+          setChainStart(null);
+          st.setSelection(null);
+        }
         return;
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      }
+      if (st.readOnly) return;
+
+      // отмена / повтор / дублирование
+      if (e.ctrlKey || e.metaKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'z' || k === 'я') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+          return;
+        }
+        if (k === 'y' || k === 'н') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (k === 'd' || k === 'в') {
+          e.preventDefault();
+          const sel = st.selection;
+          if (sel?.kind === 'furniture') {
+            const f = st.furniture.find((x) => x.id === sel.id);
+            if (f) {
+              const id = st.addFurniture({ type: f.type, x: f.x + 0.4, y: f.y + 0.4, rotation: f.rotation });
+              st.setSelection({ kind: 'furniture', id });
+            }
+          } else if (sel?.kind === 'label') {
+            const l = (st.labels ?? []).find((x) => x.id === sel.id);
+            if (l) {
+              const id = st.addLabel({ text: l.text, x: l.x + 0.4, y: l.y + 0.4, rotation: l.rotation, size: l.size });
+              st.setSelection({ kind: 'label', id });
+            }
+          }
+          return;
+        }
+        return;
+      }
+
+      // набор длины при рисовании стены
+      if (tool === 'wall' && chainStart) {
+        if (/^[0-9]$/.test(e.key) || e.key === '.' || e.key === ',') {
+          setLenInput((v) => (v + (e.key === ',' ? '.' : e.key)).slice(0, 8));
+          return;
+        }
+        if (e.key === 'Backspace' && lenInput) {
+          e.preventDefault();
+          setLenInput((v) => v.slice(0, -1));
+          return;
+        }
+        if (e.key === 'Enter') {
+          commitTypedLength();
+          return;
+        }
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
         st.deleteSelected();
       } else if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') {
         const sel = st.selection;
@@ -284,7 +360,7 @@ export default function Editor2D() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [tool, chainStart, hoverPt, lenInput]);
 
   // Видимая область и сетка
   const grid = useMemo(() => {
@@ -303,8 +379,15 @@ export default function Editor2D() {
   const px = (n: number) => n / view.scale; // n пикселей в мировых единицах
 
   const readOnly = useStore((s) => s.readOnly);
+  const showDims = useStore((s) => s.showDims);
   const selectedWall =
     selection?.kind === 'wall' && !readOnly ? walls.find((w) => w.id === selection.id) : null;
+
+  // смена инструмента сбрасывает начатую стену и набор длины
+  useEffect(() => {
+    setChainStart(null);
+    setLenInput('');
+  }, [tool]);
 
   return (
     <div ref={wrapRef} className="editor2d">
@@ -432,14 +515,39 @@ export default function Editor2D() {
             );
           })}
 
+          {/* размеры стен */}
+          {walls.map((w) => {
+            const show = showDims || (selection?.kind === 'wall' && selection.id === w.id);
+            if (!show) return null;
+            const L = wallLen(w);
+            if (L < 0.05) return null;
+            let deg = (wallAngle(w) * 180) / Math.PI;
+            const nx = -(w.b.y - w.a.y) / L;
+            const ny = (w.b.x - w.a.x) / L;
+            if (deg > 90 || deg < -90) deg += 180;
+            const off = w.thickness / 2 + px(12);
+            const mx = (w.a.x + w.b.x) / 2 + nx * off;
+            const my = (w.a.y + w.b.y) / 2 + ny * off;
+            return (
+              <text key={`dim-${w.id}`}
+                transform={`translate(${mx},${my}) rotate(${deg})`}
+                fontSize={px(11)} fill="#7a7a72" textAnchor="middle" dominantBaseline="middle"
+                style={{ userSelect: 'none' }}>
+                {L.toFixed(2)} м
+              </text>
+            );
+          })}
+
           {/* предпросмотр рисуемой стены */}
           {tool === 'wall' && chainStart && hoverPt && (
             <>
               <line x1={chainStart.x} y1={chainStart.y} x2={hoverPt.x} y2={hoverPt.y}
                 stroke="#e07a3f" strokeWidth={0.2} opacity={0.6} />
               <text x={(chainStart.x + hoverPt.x) / 2} y={(chainStart.y + hoverPt.y) / 2 - px(8)}
-                fontSize={px(12)} fill="#c05a20" textAnchor="middle">
-                {Math.hypot(hoverPt.x - chainStart.x, hoverPt.y - chainStart.y).toFixed(2)} м
+                fontSize={px(12)} fill="#c05a20" fontWeight={lenInput ? 700 : 400} textAnchor="middle">
+                {lenInput
+                  ? `${lenInput}▏м — Enter`
+                  : `${Math.hypot(hoverPt.x - chainStart.x, hoverPt.y - chainStart.y).toFixed(2)} м`}
               </text>
             </>
           )}
@@ -482,7 +590,7 @@ export default function Editor2D() {
           : null}
         {!readOnly && (tool === 'wall'
           ? chainStart
-            ? 'Клик — следующая точка · двойной клик / Esc — закончить'
+            ? 'Клик — точка · наберите длину (напр. 4.25) и Enter · Esc — закончить'
             : 'Клик — начать стену'
           : tool === 'select'
             ? 'Клик — выбрать · перетаскивание — двигать · R — повернуть · Del — удалить'

@@ -20,7 +20,9 @@ interface AppState extends ProjectData {
   viewMode: ViewMode;
   selection: Selection | null;
   readOnly: boolean;
+  showDims: boolean;
 
+  toggleDims: () => void;
   setReadOnly: (v: boolean) => void;
   setTool: (t: Tool) => void;
   setViewMode: (m: ViewMode) => void;
@@ -115,7 +117,9 @@ export const useStore = create<AppState>()(
       viewMode: 'split',
       selection: null,
       readOnly: false,
+      showDims: false,
 
+      toggleDims: () => set((s) => ({ showDims: !s.showDims })),
       setReadOnly: (readOnly) => set({ readOnly, tool: 'select' }),
       setTool: (tool) => set({ tool, selection: null }),
       setViewMode: (viewMode) => set({ viewMode }),

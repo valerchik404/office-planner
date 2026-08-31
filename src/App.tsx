@@ -5,6 +5,7 @@ import { collabAvailable, joinRoom, parseRoomHash, useCollab } from './collab';
 import { listProjects } from './projects';
 import ProjectsModal from './components/ProjectsModal';
 import RoomModal from './components/RoomModal';
+import { initHistory } from './history';
 import Toolbar from './components/Toolbar';
 import Editor2D from './components/Editor2D';
 import View3D from './components/View3D';
@@ -33,6 +34,11 @@ export default function App() {
   const projectName = useCollab((s) => s.projectName);
   const collabError = useCollab((s) => s.error);
   const readOnly = useStore((s) => s.readOnly);
+  const showDims = useStore((s) => s.showDims);
+
+  useEffect(() => {
+    initHistory();
+  }, []);
 
   // Открытие комнаты или плана, переданных ссылкой (при загрузке и при смене хэша)
   useEffect(() => {
@@ -79,6 +85,13 @@ export default function App() {
             </button>
           ))}
         </div>
+        <button
+          className={showDims ? 'active' : ''}
+          onClick={() => useStore.getState().toggleDims()}
+          title="Показывать длины всех стен"
+        >
+          📏 Размеры
+        </button>
         {readOnly && <span className="readonly-chip">👁 просмотр</span>}
         <span className="header-spacer" />
         {collabAvailable && (

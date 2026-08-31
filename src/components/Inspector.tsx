@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { exportProject, useStore } from '../store';
 import type { ProjectData } from '../store';
 import { saveFile } from '../download';
+import { wallLen } from '../geometry';
 
 function NumField({
   label, value, step = 0.1, min, max, onChange,
@@ -134,6 +135,18 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
         {wall && (
           <>
             <p className="obj-title">Стена</p>
+            <NumField label="Длина, м" value={wallLen(wall)} step={0.05} min={0.1} max={200}
+              onChange={(v) => {
+                const L = wallLen(wall);
+                if (L < 0.001 || v < 0.02) return;
+                const k = v / L;
+                st.getState().updateWall(wall.id, {
+                  b: {
+                    x: wall.a.x + (wall.b.x - wall.a.x) * k,
+                    y: wall.a.y + (wall.b.y - wall.a.y) * k,
+                  },
+                });
+              }} />
             <NumField label="Толщина, м" value={wall.thickness} step={0.05} min={0.05} max={1}
               onChange={(v) => st.getState().updateWall(wall.id, { thickness: v })} />
             <NumField label="Высота, м" value={wall.height} step={0.1} min={1} max={6}
