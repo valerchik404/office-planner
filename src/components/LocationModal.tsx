@@ -1,24 +1,45 @@
 import { useEffect, useRef, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import { useStore } from '../store';
 import { searchCities } from '../cities';
 import type { CityMatch } from '../cities';
 
-/** Точный геокодинг через Nominatim — работает только там, где разрешены
- *  внешние запросы (localhost); в веб-версии тихо падает и не используется. */
-async function geocodePrecise(q: string): Promise<CityMatch | null> {
+function ClickHandler() {
+  const setLocation = useStore((s) => s.setLocation);
+  useMapEvents({
+    click(e) {
+      setLocation({ lat: e.latlng.lat, lng: e.latlng.lng, label: '' });
+    },
+  });
+  return null;
+}
+
+/** Перелетает к точке, когда локация меняется (после поиска адреса). */
+function FlyTo() {
+  const lat = useStore((s) => s.location.lat);
+  const lng = useStore((s) => s.location.lng);
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { duration: 0.8 });
+  }, [lat, lng, map]);
+  return null;
+}
+
+/** Геокодинг через Nominatim (OpenStreetMap): любой адрес или город мира.
+ *  Если сеть или сервис недоступны — просто вернёт пусто. */
+async function geocodeRemote(q: string, limit = 5): Promise<CityMatch[]> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3500);
+  const timer = setTimeout(() => ctrl.abort(), 4000);
   try {
     const url =
-      'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=ru&q=' +
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=${limit}&accept-language=ru&q=` +
       encodeURIComponent(q);
     const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = (await res.json()) as { lat: string; lon: string; display_name: string }[];
-    if (!data.length) return null;
-    return { name: data[0].display_name, lat: Number(data[0].lat), lng: Number(data[0].lon) };
+    return data.map((d) => ({ name: d.display_name, lat: Number(d.lat), lng: Number(d.lon) }));
   } catch {
-    return null;
+    return [];
   } finally {
     clearTimeout(timer);
   }
@@ -51,15 +72,35 @@ export default function LocationModal({ onClose }: { onClose: () => void }) {
     setSuggestions(searchCities(v));
   };
 
+  // если локальная база молчит — через полсекунды тихо спрашиваем интернет
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 3 || searchCities(q).length > 0) return;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      const remote = await geocodeRemote(q);
+      setSearching(false);
+      setSuggestions((cur) => {
+        // запрос мог измениться, пока ждали ответ
+        if (query !== q && inputRef.current?.value.trim() !== q) return cur;
+        return remote;
+      });
+      if (remote.length === 0) {
+        setError('Ничего не нашлось. Попробуйте иначе — или название ближайшего крупного города: для солнца этого достаточно.');
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [query]);
+
   const onSearch = async () => {
     const q = query.trim();
     if (!q) return;
     setSearching(true);
     setError('');
-    const precise = await geocodePrecise(q);
+    const remote = await geocodeRemote(q, 1);
     setSearching(false);
-    if (precise) {
-      pick(precise);
+    if (remote.length > 0) {
+      pick(remote[0]);
       return;
     }
     const local = searchCities(q);
@@ -109,12 +150,30 @@ export default function LocationModal({ onClose }: { onClose: () => void }) {
           </ul>
         )}
 
+        <MapContainer
+          center={[location.lat, location.lng]}
+          zoom={13}
+          style={{ height: 320, width: '100%', borderRadius: 8 }}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <CircleMarker
+            center={[location.lat, location.lng]}
+            radius={9}
+            pathOptions={{ color: '#d33', fillColor: '#d33', fillOpacity: 0.7 }}
+          />
+          <ClickHandler />
+          <FlyTo />
+        </MapContainer>
+
         <div className="location-current">
           <span className="location-pin">📍</span>
           <div>
-            <div className="location-label">{location.label || 'Точка задана'}</div>
+            <div className="location-label">{location.label || 'Точка на карте'}</div>
             <div className="muted">
-              широта {location.lat.toFixed(3)}, долгота {location.lng.toFixed(3)}
+              широта {location.lat.toFixed(3)}, долгота {location.lng.toFixed(3)} · кликните по карте, чтобы уточнить
             </div>
           </div>
         </div>

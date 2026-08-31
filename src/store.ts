@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type {
-  Furniture, GeoLocation, Opening, Selection, Tool, Underlay, ViewMode, Wall,
+  Furniture, GeoLocation, Opening, PlanLabel, Selection, Tool, Underlay, ViewMode, Wall,
 } from './types';
 import { uid } from './geometry';
 
@@ -9,6 +9,7 @@ export interface ProjectData {
   walls: Wall[];
   openings: Opening[];
   furniture: Furniture[];
+  labels?: PlanLabel[];
   underlay: Underlay;
   location: GeoLocation;
   sun: { dateISO: string; minutes: number };
@@ -36,6 +37,10 @@ interface AppState extends ProjectData {
   addFurniture: (f: Omit<Furniture, 'id'>) => string;
   updateFurniture: (id: string, patch: Partial<Furniture>) => void;
   deleteFurniture: (id: string) => void;
+
+  addLabel: (l: Omit<PlanLabel, 'id'>) => string;
+  updateLabel: (id: string, patch: Partial<PlanLabel>) => void;
+  deleteLabel: (id: string) => void;
 
   setUnderlay: (patch: Partial<Underlay>) => void;
   setLocation: (patch: Partial<GeoLocation>) => void;
@@ -87,10 +92,15 @@ function demoProject(): ProjectData {
     fu('desk', 10.6, 4, 90), fu('chair', 9.8, 4, 90),
     fu('desk', 3, 2, 180), fu('chair', 3, 2.8, 180),
   ];
+  const labels: PlanLabel[] = [
+    { id: uid(), text: 'Переговорная', x: 10, y: 1.2, rotation: 0, size: 0.4 },
+    { id: uid(), text: 'Опенспейс', x: 4, y: 4.5, rotation: 0, size: 0.5 },
+  ];
   return {
     walls,
     openings,
     furniture,
+    labels,
     underlay: { dataUrl: null, widthM: 12, aspect: 1.5, opacity: 0.4, x: 0, y: 0 },
     location: { lat: 55.751, lng: 37.618, northAngle: 0, label: 'Москва' },
     sun: { dateISO: todayISO(), minutes: 14 * 60 },
@@ -145,6 +155,16 @@ export const useStore = create<AppState>()(
       deleteFurniture: (id) =>
         set((s) => ({ furniture: s.furniture.filter((f) => f.id !== id), selection: null })),
 
+      addLabel: (l) => {
+        const id = uid();
+        set((s) => ({ labels: [...(s.labels ?? []), { ...l, id }] }));
+        return id;
+      },
+      updateLabel: (id, patch) =>
+        set((s) => ({ labels: (s.labels ?? []).map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
+      deleteLabel: (id) =>
+        set((s) => ({ labels: (s.labels ?? []).filter((l) => l.id !== id), selection: null })),
+
       setUnderlay: (patch) => set((s) => ({ underlay: { ...s.underlay, ...patch } })),
       setLocation: (patch) => set((s) => ({ location: { ...s.location, ...patch } })),
       setSun: (patch) => set((s) => ({ sun: { ...s.sun, ...patch } })),
@@ -154,13 +174,14 @@ export const useStore = create<AppState>()(
         if (!sel) return;
         if (sel.kind === 'wall') get().deleteWall(sel.id);
         else if (sel.kind === 'opening') get().deleteOpening(sel.id);
+        else if (sel.kind === 'label') get().deleteLabel(sel.id);
         else get().deleteFurniture(sel.id);
       },
 
-      loadProject: (data) => set({ ...data, selection: null }),
+      loadProject: (data) => set({ ...data, labels: data.labels ?? [], selection: null }),
       clearProject: () =>
         set({
-          walls: [], openings: [], furniture: [],
+          walls: [], openings: [], furniture: [], labels: [],
           underlay: { dataUrl: null, widthM: 12, aspect: 1.5, opacity: 0.4, x: 0, y: 0 },
           selection: null,
         }),
@@ -177,6 +198,7 @@ export const useStore = create<AppState>()(
         walls: s.walls,
         openings: s.openings,
         furniture: s.furniture,
+        labels: s.labels ?? [],
         underlay: s.underlay,
         location: s.location,
         sun: s.sun,
@@ -188,7 +210,7 @@ export const useStore = create<AppState>()(
 export function exportProject(): string {
   const s = useStore.getState();
   const data: ProjectData = {
-    walls: s.walls, openings: s.openings, furniture: s.furniture,
+    walls: s.walls, openings: s.openings, furniture: s.furniture, labels: s.labels ?? [],
     underlay: s.underlay, location: s.location, sun: s.sun,
   };
   return JSON.stringify(data, null, 2);

@@ -33,6 +33,15 @@ export interface Furniture {
   rotation: number; // градусы, по часовой на плане
 }
 
+export interface PlanLabel {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  rotation: number; // градусы
+  size: number; // высота букв, м
+}
+
 export interface Underlay {
   dataUrl: string | null;
   widthM: number; // ширина картинки в метрах
@@ -49,10 +58,10 @@ export interface GeoLocation {
   label?: string; // человекочитаемое название места
 }
 
-export type Tool = 'select' | 'wall' | 'window' | 'door' | 'passage' | 'desk' | 'chair';
+export type Tool = 'select' | 'wall' | 'window' | 'door' | 'passage' | 'desk' | 'chair' | 'note';
 export type ViewMode = '2d' | '3d' | 'split';
 
 export interface Selection {
-  kind: 'wall' | 'opening' | 'furniture';
+  kind: 'wall' | 'opening' | 'furniture' | 'label';
   id: string;
 }

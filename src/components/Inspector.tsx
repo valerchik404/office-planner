@@ -35,6 +35,29 @@ const KIND_NAMES = {
   window: 'Окно', door: 'Дверь', passage: 'Проём', desk: 'Стол', chair: 'Стул',
 } as const;
 
+function LabelSection({ id }: { id: string }) {
+  const label = useStore((s) => (s.labels ?? []).find((l) => l.id === id));
+  if (!label) return null;
+  const st = useStore.getState();
+  return (
+    <>
+      <p className="obj-title">Надпись</p>
+      <input
+        className="search-input"
+        value={label.text}
+        onChange={(e) => st.updateLabel(label.id, { text: e.target.value })}
+        placeholder="Текст надписи"
+      />
+      <NumField label="Размер, м" value={label.size} step={0.05} min={0.1} max={3}
+        onChange={(v) => st.updateLabel(label.id, { size: v })} />
+      <NumField label="Поворот, °" value={label.rotation} step={15} min={-360} max={360}
+        onChange={(v) => st.updateLabel(label.id, { rotation: ((v % 360) + 360) % 360 })} />
+      <p className="muted">R — повернуть, Del — удалить, мышью — двигать</p>
+      <button className="danger" onClick={() => st.deleteLabel(label.id)}>Удалить</button>
+    </>
+  );
+}
+
 export default function Inspector({ onOpenLocation }: { onOpenLocation: () => void }) {
   const selection = useStore((s) => s.selection);
   const walls = useStore((s) => s.walls);
@@ -107,6 +130,7 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
       <section>
         <h3>Объект</h3>
         {!selection && <p className="muted">Ничего не выбрано. Кликните по объекту на плане.</p>}
+        {selection?.kind === 'label' && <LabelSection id={selection.id} />}
         {wall && (
           <>
             <p className="obj-title">Стена</p>

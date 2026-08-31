@@ -17,6 +17,7 @@ const OPENING_DEFAULTS = {
 type Drag =
   | { kind: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { kind: 'furniture'; id: string; dx: number; dy: number }
+  | { kind: 'label'; id: string; dx: number; dy: number }
   | { kind: 'endpoint'; wallId: string; end: 'a' | 'b' }
   | { kind: 'opening'; id: string; wallId: string };
 
@@ -24,6 +25,7 @@ export default function Editor2D() {
   const walls = useStore((s) => s.walls);
   const openings = useStore((s) => s.openings);
   const furniture = useStore((s) => s.furniture);
+  const labels = useStore((s) => s.labels) ?? [];
   const underlay = useStore((s) => s.underlay);
   const northAngle = useStore((s) => s.location.northAngle);
   const tool = useStore((s) => s.tool);
@@ -99,7 +101,16 @@ export default function Editor2D() {
     return { x, y };
   };
 
-  const hitTest = (p: Pt): { kind: 'furniture' | 'opening' | 'wall'; id: string } | null => {
+  const hitTest = (p: Pt): { kind: 'furniture' | 'opening' | 'wall' | 'label'; id: string } | null => {
+    for (let i = labels.length - 1; i >= 0; i--) {
+      const l = labels[i];
+      const w = Math.max(0.4, l.text.length * l.size * 0.62);
+      const h = l.size * 1.4;
+      const a = (-l.rotation * Math.PI) / 180;
+      const lx = (p.x - l.x) * Math.cos(a) - (p.y - l.y) * Math.sin(a);
+      const ly = (p.x - l.x) * Math.sin(a) + (p.y - l.y) * Math.cos(a);
+      if (Math.abs(lx) <= w / 2 && Math.abs(ly) <= h / 2) return { kind: 'label', id: l.id };
+    }
     for (let i = furniture.length - 1; i >= 0; i--) {
       const f = furniture[i];
       const fp = FOOTPRINT[f.type];
@@ -179,6 +190,13 @@ export default function Editor2D() {
       st.setSelection({ kind: 'furniture', id });
       return;
     }
+    if (tool === 'note') {
+      const sp = { x: snap(p.x, 0.05), y: snap(p.y, 0.05) };
+      const id = st.addLabel({ text: 'Надпись', x: sp.x, y: sp.y, rotation: 0, size: 0.4 });
+      st.setTool('select'); // сразу к редактированию текста в инспекторе
+      st.setSelection({ kind: 'label', id });
+      return;
+    }
     // select
     const hit = hitTest(p);
     if (!hit) {
@@ -190,6 +208,9 @@ export default function Editor2D() {
     if (hit.kind === 'furniture') {
       const f = furniture.find((x) => x.id === hit.id)!;
       dragRef.current = { kind: 'furniture', id: f.id, dx: f.x - p.x, dy: f.y - p.y };
+    } else if (hit.kind === 'label') {
+      const l = labels.find((x) => x.id === hit.id)!;
+      dragRef.current = { kind: 'label', id: l.id, dx: l.x - p.x, dy: l.y - p.y };
     } else if (hit.kind === 'opening') {
       const o = openings.find((x) => x.id === hit.id)!;
       dragRef.current = { kind: 'opening', id: o.id, wallId: o.wallId };
@@ -210,6 +231,11 @@ export default function Editor2D() {
       }));
     } else if (drag.kind === 'furniture') {
       st.updateFurniture(drag.id, {
+        x: snap(p.x + drag.dx, 0.05),
+        y: snap(p.y + drag.dy, 0.05),
+      });
+    } else if (drag.kind === 'label') {
+      st.updateLabel(drag.id, {
         x: snap(p.x + drag.dx, 0.05),
         y: snap(p.y + drag.dy, 0.05),
       });
@@ -250,6 +276,9 @@ export default function Editor2D() {
         if (sel?.kind === 'furniture') {
           const f = st.furniture.find((x) => x.id === sel.id);
           if (f) st.updateFurniture(f.id, { rotation: (f.rotation + (e.shiftKey ? -15 : 15) + 360) % 360 });
+        } else if (sel?.kind === 'label') {
+          const l = (st.labels ?? []).find((x) => x.id === sel.id);
+          if (l) st.updateLabel(l.id, { rotation: (l.rotation + (e.shiftKey ? -15 : 15) + 360) % 360 });
         }
       }
     };
@@ -372,6 +401,37 @@ export default function Editor2D() {
             );
           })}
 
+          {/* надписи */}
+          {labels.map((l) => {
+            const sel = selection?.kind === 'label' && selection.id === l.id;
+            return (
+              <g key={l.id} transform={`translate(${l.x},${l.y}) rotate(${l.rotation})`}>
+                <text
+                  fontSize={l.size}
+                  fill={sel ? '#c05a20' : '#4d4d57'}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontWeight={600}
+                  style={{ userSelect: 'none' }}
+                >
+                  {l.text}
+                </text>
+                {sel && (
+                  <rect
+                    x={-Math.max(0.4, l.text.length * l.size * 0.62) / 2}
+                    y={(-l.size * 1.4) / 2}
+                    width={Math.max(0.4, l.text.length * l.size * 0.62)}
+                    height={l.size * 1.4}
+                    fill="none"
+                    stroke="#e07a3f"
+                    strokeWidth={px(1.5)}
+                    strokeDasharray={`${px(4)} ${px(3)}`}
+                  />
+                )}
+              </g>
+            );
+          })}
+
           {/* предпросмотр рисуемой стены */}
           {tool === 'wall' && chainStart && hoverPt && (
             <>
@@ -428,7 +488,9 @@ export default function Editor2D() {
             ? 'Клик — выбрать · перетаскивание — двигать · R — повернуть · Del — удалить'
             : tool === 'desk' || tool === 'chair'
               ? 'Клик — поставить'
-              : 'Клик по стене — добавить проём')}
+              : tool === 'note'
+                ? 'Клик — поставить надпись (текст меняется справа)'
+                : 'Клик по стене — добавить проём')}
         {hoverPt && `  |  x: ${hoverPt.x.toFixed(2)}  y: ${hoverPt.y.toFixed(2)}`}
       </div>
     </div>

@@ -169,6 +169,10 @@ export const CITIES: [string, string, number, number][] = [
   ['Анталья', 'Antalya', 36.9, 30.7],
   ['Никосия', 'Nicosia', 35.19, 33.38],
   ['Лимасол', 'Limassol', 34.68, 33.04],
+  ['Пафос', 'Paphos', 34.77, 32.42],
+  ['Ларнака', 'Larnaca', 34.92, 33.62],
+  ['Айя-Напа', 'Ayia Napa', 34.99, 34.0],
+  ['Протарас', 'Protaras', 35.01, 34.05],
   // Азия и Ближний Восток
   ['Дубай', 'Dubai', 25.2, 55.27],
   ['Абу-Даби', 'Abu Dhabi', 24.45, 54.38],
@@ -217,8 +221,7 @@ export interface CityMatch {
   lng: number;
 }
 
-export function searchCities(query: string, limit = 6): CityMatch[] {
-  const q = norm(query);
+function searchOnce(q: string, limit: number): CityMatch[] {
   if (q.length < 2) return [];
   const starts: CityMatch[] = [];
   const contains: CityMatch[] = [];
@@ -229,4 +232,14 @@ export function searchCities(query: string, limit = 6): CityMatch[] {
     else if (n.includes(q) || e.includes(q)) contains.push({ name, lat, lng });
   }
   return [...starts, ...contains].slice(0, limit);
+}
+
+export function searchCities(query: string, limit = 6): CityMatch[] {
+  const q = norm(query);
+  const direct = searchOnce(q, limit);
+  if (direct.length > 0) return direct;
+  // «пафос, кипр» → пробуем часть до запятой
+  const head = norm(q.split(/[,;/]/)[0]);
+  if (head && head !== q) return searchOnce(head, limit);
+  return [];
 }

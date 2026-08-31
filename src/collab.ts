@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import { firebaseConfig } from './firebase-config';
 import { useStore } from './store';
 import { saveProjectRef } from './projects';
-import type { Furniture, GeoLocation, Opening, Underlay, Wall } from './types';
+import type { Furniture, GeoLocation, Opening, PlanLabel, Underlay, Wall } from './types';
 
 export const collabAvailable = Boolean(firebaseConfig);
 
@@ -29,7 +29,10 @@ export const useCollab = create<CollabUI>(() => ({
 interface PlanPayload {
   by: string;
   rev: number;
-  data: { walls?: Wall[]; openings?: Opening[]; furniture?: Furniture[]; location?: GeoLocation };
+  data: {
+    walls?: Wall[]; openings?: Opening[]; furniture?: Furniture[];
+    labels?: PlanLabel[]; location?: GeoLocation;
+  };
 }
 
 interface UnderlayPayload {
@@ -78,7 +81,10 @@ function pushPlan(): void {
   set(ref(db(), `rooms/${roomId}/plan`), {
     by: sessionId,
     rev: Date.now(),
-    data: clean({ walls: s.walls, openings: s.openings, furniture: s.furniture, location: s.location }),
+    data: clean({
+      walls: s.walls, openings: s.openings, furniture: s.furniture,
+      labels: s.labels ?? [], location: s.location,
+    }),
   }).catch(() => { /* нет прав или сети — молча */ });
 }
 
@@ -99,6 +105,7 @@ function applyPlan(p: PlanPayload): void {
     walls: p.data.walls ?? [],
     openings: p.data.openings ?? [],
     furniture: p.data.furniture ?? [],
+    labels: p.data.labels ?? [],
     location: p.data.location ?? useStore.getState().location,
   });
   applyingRemote = false;
@@ -193,7 +200,7 @@ export async function joinRoom(roomId: string, token?: string): Promise<void> {
   // локальные изменения → в облако (с защитой от эха)
   const u5 = useStore.subscribe((s, prev) => {
     if (applyingRemote || useCollab.getState().role !== 'editor') return;
-    if (s.walls !== prev.walls || s.openings !== prev.openings || s.furniture !== prev.furniture || s.location !== prev.location) {
+    if (s.walls !== prev.walls || s.openings !== prev.openings || s.furniture !== prev.furniture || s.labels !== prev.labels || s.location !== prev.location) {
       if (planTimer) clearTimeout(planTimer);
       planTimer = setTimeout(pushPlan, 350);
     }
@@ -216,7 +223,10 @@ function pushPlan0(roomId: string): void {
   set(ref(db(), `rooms/${roomId}/plan`), {
     by: sessionId,
     rev: Date.now(),
-    data: clean({ walls: s.walls, openings: s.openings, furniture: s.furniture, location: s.location }),
+    data: clean({
+      walls: s.walls, openings: s.openings, furniture: s.furniture,
+      labels: s.labels ?? [], location: s.location,
+    }),
   }).catch(() => { /* ignore */ });
 }
 

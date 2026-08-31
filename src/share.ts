@@ -10,6 +10,7 @@ export function buildShareUrl(): string {
     walls: s.walls,
     openings: s.openings,
     furniture: s.furniture,
+    labels: s.labels ?? [],
     underlay: { ...s.underlay, dataUrl: null },
     location: s.location,
     sun: s.sun,

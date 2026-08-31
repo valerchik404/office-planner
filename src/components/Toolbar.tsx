@@ -9,6 +9,7 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
   { id: 'passage', icon: '⬜', label: 'Проём' },
   { id: 'desk', icon: '🖥️', label: 'Стол' },
   { id: 'chair', icon: '🪑', label: 'Стул' },
+  { id: 'note', icon: '📝', label: 'Надпись' },
 ];
 
 export default function Toolbar() {
