@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import type { Pt, Wall } from '../types';
 import { openingSpan, projectOnWall, snap, wallAngle, wallLen } from '../geometry';
 import { redo, undo } from '../history';
-import { FURNITURE_TYPES, fpOf, metaOf } from '../furniture';
+import { FURNITURE_TYPES, fpOf, isSeat, kelvinToHex, lampParams, metaOf } from '../furniture';
 import { computeSunHours, sunHoursColor } from '../sunlight';
 import type { FurnitureType } from '../types';
 
@@ -51,7 +51,7 @@ export default function Editor2D() {
 
   const sunHours = useMemo(() => {
     if (!showSun) return null;
-    const seats = furniture.filter((f) => f.type === 'desk' || f.type === 'meeting');
+    const seats = furniture.filter((f) => isSeat(f.type));
     return computeSunHours(seats, walls, openings, location, dateISO);
   }, [showSun, furniture, walls, openings, location, dateISO]);
 
@@ -297,7 +297,7 @@ export default function Editor2D() {
       const f = st.furniture.find((x) => x.id === drag.id);
       if (!f) return;
       const raw = { x: p.x + drag.dx, y: p.y + drag.dy };
-      const snapped = wallSnap(raw, fpOf(f).d);
+      const snapped = f.type === 'lamp' ? null : wallSnap(raw, fpOf(f).d);
       if (snapped) {
         st.updateFurniture(drag.id, snapped);
       } else {
@@ -561,7 +561,20 @@ export default function Editor2D() {
             const sw = px(sel || inGroup ? 2.5 : 1.2);
             return (
               <g key={f.id} transform={`translate(${f.x},${f.y}) rotate(${f.rotation})`}>
-                {f.type === 'plant' ? (
+                {f.type === 'lamp' ? (
+                  <>
+                    <circle r={fp.w / 2} fill={kelvinToHex(lampParams(f).temp)}
+                      stroke={stroke} strokeWidth={sw} opacity={lampParams(f).lumens > 0 ? 1 : 0.35} />
+                    {[0, 45, 90, 135].map((a) => (
+                      <line key={a}
+                        x1={Math.cos((a * Math.PI) / 180) * fp.w * 0.62}
+                        y1={Math.sin((a * Math.PI) / 180) * fp.w * 0.62}
+                        x2={-Math.cos((a * Math.PI) / 180) * fp.w * 0.62}
+                        y2={-Math.sin((a * Math.PI) / 180) * fp.w * 0.62}
+                        stroke={meta.stroke} strokeWidth={px(1)} opacity={0.7} />
+                    ))}
+                  </>
+                ) : f.type === 'plant' ? (
                   <>
                     <circle r={fp.w / 2} fill={fill} stroke={stroke} strokeWidth={sw} />
                     <circle r={fp.w / 4} fill="none" stroke={meta.stroke} strokeWidth={px(1)} />

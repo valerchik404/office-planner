@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { makeDate, sunDirection } from '../sun';
 import { openingSpan, wallAngle, wallBoxes, wallLen, wallsBBox } from '../geometry';
-import { fpOf } from '../furniture';
+import { fpOf, kelvinToHex, lampParams, metaOf } from '../furniture';
 import type { Furniture, Opening, Wall } from '../types';
 
 function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
@@ -68,6 +68,7 @@ function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
 function FurnitureMesh({ f }: { f: Furniture }) {
   const rot = (-f.rotation * Math.PI) / 180;
   const { w, d } = fpOf(f);
+  const meta = metaOf(f.type);
   const pos: [number, number, number] = [f.x, 0, f.y];
 
   if (f.type === 'desk' || f.type === 'meeting') {
@@ -88,25 +89,34 @@ function FurnitureMesh({ f }: { f: Furniture }) {
       </group>
     );
   }
-  if (f.type === 'chair') {
+  if (f.type === 'chair' || f.type === 'armchair') {
     const lx = w / 2 - 0.05;
     const lz = d / 2 - 0.05;
+    const seatH = f.type === 'armchair' ? 0.4 : 0.45;
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow position={[0, 0.45, 0]}>
-          <boxGeometry args={[w, 0.06, d]} />
-          <meshStandardMaterial color="#5f7d59" roughness={0.8} />
+        <mesh castShadow position={[0, seatH, 0]}>
+          <boxGeometry args={[w, f.type === 'armchair' ? 0.2 : 0.06, d]} />
+          <meshStandardMaterial color="#5f7d59" roughness={0.85} />
         </mesh>
-        <mesh castShadow position={[0, 0.72, d / 2 - 0.025]}>
-          <boxGeometry args={[w, 0.55, 0.05]} />
-          <meshStandardMaterial color="#5f7d59" roughness={0.8} />
+        <mesh castShadow position={[0, seatH + 0.3, d / 2 - 0.05]}>
+          <boxGeometry args={[w, 0.55, 0.1]} />
+          <meshStandardMaterial color="#5f7d59" roughness={0.85} />
         </mesh>
-        {[[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].map(([x, z], i) => (
-          <mesh key={i} castShadow position={[x, 0.21, z]}>
-            <boxGeometry args={[0.04, 0.42, 0.04]} />
-            <meshStandardMaterial color="#4a4a4a" metalness={0.4} />
-          </mesh>
-        ))}
+        {f.type === 'armchair' &&
+          [-1, 1].map((s) => (
+            <mesh key={s} castShadow position={[s * (w / 2 - 0.06), seatH + 0.18, 0]}>
+              <boxGeometry args={[0.12, 0.18, d * 0.85]} />
+              <meshStandardMaterial color="#55704f" roughness={0.9} />
+            </mesh>
+          ))}
+        {f.type === 'chair' &&
+          [[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].map(([x, z], i) => (
+            <mesh key={i} castShadow position={[x, 0.21, z]}>
+              <boxGeometry args={[0.04, 0.42, 0.04]} />
+              <meshStandardMaterial color="#4a4a4a" metalness={0.4} />
+            </mesh>
+          ))}
       </group>
     );
   }
@@ -130,12 +140,16 @@ function FurnitureMesh({ f }: { f: Furniture }) {
       </group>
     );
   }
-  if (f.type === 'cabinet') {
+  if (f.type === 'cabinet' || f.type === 'drawer' || f.type === 'reception') {
+    const h = meta.h;
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow receiveShadow position={[0, 0.95, 0]}>
-          <boxGeometry args={[w, 1.9, d]} />
-          <meshStandardMaterial color="#8f8f98" roughness={0.7} />
+        <mesh castShadow receiveShadow position={[0, h / 2, 0]}>
+          <boxGeometry args={[w, h, d]} />
+          <meshStandardMaterial
+            color={f.type === 'reception' ? '#b08f6c' : '#8f8f98'}
+            roughness={0.75}
+          />
         </mesh>
       </group>
     );
@@ -154,14 +168,80 @@ function FurnitureMesh({ f }: { f: Furniture }) {
       </group>
     );
   }
+  if (f.type === 'lamp') {
+    const { temp, mount } = lampParams(f);
+    const color = kelvinToHex(temp);
+    return (
+      <group position={[f.x, 0, f.y]}>
+        <mesh position={[0, mount, 0]}>
+          <cylinderGeometry args={[w / 2, w / 2, 0.08, 16]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.6} />
+        </mesh>
+      </group>
+    );
+  }
   // box и всё неизвестное
   return (
     <group position={pos} rotation={[0, rot, 0]}>
-      <mesh castShadow receiveShadow position={[0, 0.375, 0]}>
-        <boxGeometry args={[w, 0.75, d]} />
+      <mesh castShadow receiveShadow position={[0, meta.h / 2, 0]}>
+        <boxGeometry args={[w, meta.h, d]} />
         <meshStandardMaterial color="#a3a398" roughness={0.85} />
       </mesh>
     </group>
+  );
+}
+
+/** Свет от светильников. Яркость подобрана эмпирически: 3000 лм ≈ офисная лампа. */
+function Lamps({ lamps }: { lamps: Furniture[] }) {
+  return (
+    <>
+      {lamps.slice(0, 12).map((f, i) => {
+        const { lumens, temp, mount } = lampParams(f);
+        if (lumens <= 0) return null;
+        // первые лампы отбрасывают тень (свет не проходит сквозь стены),
+        // остальные — только светят: тени от точечных источников дороги
+        const withShadow = i < 3;
+        return (
+          <pointLight
+            key={f.id}
+            position={[f.x, mount, f.y]}
+            intensity={lumens / 400}
+            distance={0}
+            decay={2}
+            color={kelvinToHex(temp)}
+            castShadow={withShadow}
+            shadow-mapSize-width={512}
+            shadow-mapSize-height={512}
+            shadow-camera-near={0.2}
+            shadow-camera-far={30}
+            shadow-bias={-0.004}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** Крыша: видимо прозрачная, но для солнца — глухая (даёт полную тень). */
+function Roof({
+  center, sizeX, sizeZ, height,
+}: {
+  center: { x: number; z: number };
+  sizeX: number;
+  sizeZ: number;
+  height: number;
+}) {
+  return (
+    <mesh castShadow position={[center.x, height + 0.05, center.z]}>
+      <boxGeometry args={[sizeX, 0.1, sizeZ]} />
+      <meshStandardMaterial
+        color="#c9d2dc"
+        transparent
+        opacity={0.12}
+        depthWrite={false}
+        roughness={0.9}
+      />
+    </mesh>
   );
 }
 
@@ -208,6 +288,7 @@ function Scene() {
   const furniture = useStore((s) => s.furniture);
   const location = useStore((s) => s.location);
   const sunState = useStore((s) => s.sun);
+  const showRoof = useStore((s) => s.showRoof);
 
   const bbox = wallsBBox(walls);
   const center = bbox
@@ -216,6 +297,8 @@ function Scene() {
   const extentX = bbox ? bbox.maxX - bbox.minX : 10;
   const extentZ = bbox ? bbox.maxY - bbox.minY : 10;
   const radius = Math.max(extentX, extentZ) / 2 + 6;
+  const ceilH = walls.length ? Math.max(...walls.map((w) => w.height)) : 3;
+  const lamps = useMemo(() => furniture.filter((f) => f.type === 'lamp'), [furniture]);
 
   const sun = useMemo(() => {
     const date = makeDate(sunState.dateISO, sunState.minutes, location.lat, location.lng);
@@ -288,6 +371,15 @@ function Scene() {
       {furniture.map((f) => (
         <FurnitureMesh key={f.id} f={f} />
       ))}
+      <Lamps lamps={lamps} />
+      {bbox && showRoof && (
+        <Roof
+          center={center}
+          sizeX={extentX + 0.8}
+          sizeZ={extentZ + 0.8}
+          height={ceilH}
+        />
+      )}
 
       <arrowHelper args={[northArrow.dir, northArrow.origin, 2.2, '#d23333', 0.55, 0.3]} />
 

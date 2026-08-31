@@ -23,7 +23,11 @@ export interface Opening {
   height: number; // м, высота проёма
 }
 
-export type FurnitureType = 'desk' | 'meeting' | 'chair' | 'sofa' | 'cabinet' | 'plant' | 'box';
+export type FurnitureType =
+  | 'desk' | 'meeting' | 'reception'
+  | 'chair' | 'armchair' | 'sofa'
+  | 'cabinet' | 'drawer'
+  | 'plant' | 'lamp' | 'box';
 
 export interface Furniture {
   id: string;
@@ -33,6 +37,10 @@ export interface Furniture {
   rotation: number; // градусы, по часовой на плане
   w?: number; // своя ширина, м (иначе — по типу)
   d?: number; // своя глубина, м
+  // только для ламп
+  lumens?: number; // световой поток, лм
+  temp?: number; // цветовая температура, K
+  mount?: number; // высота подвеса, м
 }
 
 export interface PlanLabel {

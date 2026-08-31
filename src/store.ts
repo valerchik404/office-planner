@@ -23,9 +23,11 @@ interface AppState extends ProjectData {
   readOnly: boolean;
   showDims: boolean;
   showSun: boolean;
+  showRoof: boolean;
 
   toggleDims: () => void;
   toggleSun: () => void;
+  toggleRoof: () => void;
   setMultiSelect: (ids: string[]) => void;
   setReadOnly: (v: boolean) => void;
   setTool: (t: Tool) => void;
@@ -124,9 +126,11 @@ export const useStore = create<AppState>()(
       readOnly: false,
       showDims: false,
       showSun: false,
+      showRoof: true,
 
       toggleDims: () => set((s) => ({ showDims: !s.showDims })),
       toggleSun: () => set((s) => ({ showSun: !s.showSun })),
+      toggleRoof: () => set((s) => ({ showRoof: !s.showRoof })),
       setMultiSelect: (multiSelect) => set({ multiSelect, selection: null }),
       setReadOnly: (readOnly) => set({ readOnly, tool: 'select' }),
       setTool: (tool) => set({ tool, selection: null, multiSelect: [] }),

@@ -75,9 +75,6 @@ input[type='range'] { accent-color: #e8a33d; }
   width: 84px;
   overflow-y: auto;
 }
-.toolbar .tool:nth-child(7) {
-  margin-top: 12px;
-}
 .toolbar .tool {
   display: flex;
   flex-direction: column;
@@ -297,3 +294,79 @@ input[type='range'] { accent-color: #e8a33d; }
   flex-wrap: wrap;
 }
 .compass-preview { flex-shrink: 0; }
+
+/* панель инструментов и выпадающие палитры */
+.toolbar-wrap {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  z-index: 20;
+}
+.tool-group {
+  position: relative;
+}
+.tool-caret {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  color: #8b8d97;
+}
+.tool-group.open .tool-caret { color: #e6e6ea; }
+
+.palette {
+  position: absolute;
+  left: 100%;
+  top: 8px;
+  width: 268px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  background: #23252c;
+  border: 1px solid #3c3f48;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 6px 6px 24px rgba(0, 0, 0, 0.45);
+}
+.palette h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9a9ca6;
+}
+.palette-group { display: flex; flex-direction: column; gap: 5px; }
+.palette-group-title {
+  font-size: 11px;
+  color: #8b8d97;
+  border-bottom: 1px solid #2e3138;
+  padding-bottom: 3px;
+}
+.palette-list { display: flex; flex-direction: column; gap: 4px; }
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 7px 9px;
+  background: #262932;
+  width: 100%;
+}
+.palette-item:hover { background: #333742; }
+.palette-item.active { background: #3d5a80; border-color: #5c82ad; }
+.palette-icon { font-size: 17px; flex-shrink: 0; }
+.palette-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.palette-name { font-weight: 600; }
+.palette-hint { font-size: 11px; color: #9a9ca6; }
+.palette-item.active .palette-hint { color: #cfe0f2; }
+.palette-note { font-size: 11px; color: #8b8d97; }
+
+.lamp-swatch {
+  width: 100%;
+  height: 12px;
+  border-radius: 4px;
+  border: 1px solid #3c3f48;
+}

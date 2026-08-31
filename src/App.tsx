@@ -36,6 +36,7 @@ export default function App() {
   const readOnly = useStore((s) => s.readOnly);
   const showDims = useStore((s) => s.showDims);
   const showSun = useStore((s) => s.showSun);
+  const showRoof = useStore((s) => s.showRoof);
 
   useEffect(() => {
     initHistory();
@@ -99,6 +100,13 @@ export default function App() {
           title="Сколько часов прямого солнца получает каждый стол за выбранный день"
         >
           ☀️ Свет
+        </button>
+        <button
+          className={showRoof ? 'active' : ''}
+          onClick={() => useStore.getState().toggleRoof()}
+          title="Прозрачная крыша: видно планировку, но солнце сквозь неё не проходит"
+        >
+          🏠 Крыша
         </button>
         {readOnly && <span className="readonly-chip">👁 просмотр</span>}
         <span className="header-spacer" />

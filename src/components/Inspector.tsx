@@ -3,7 +3,7 @@ import { exportProject, useStore } from '../store';
 import type { ProjectData } from '../store';
 import { saveFile } from '../download';
 import { wallLen } from '../geometry';
-import { fpOf, metaOf } from '../furniture';
+import { fpOf, kelvinToHex, lampParams, metaOf } from '../furniture';
 
 function NumField({
   label, value, step = 0.1, min, max, onChange,
@@ -227,6 +227,21 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
               onChange={(v) => st.getState().updateFurniture(furn.id, { x: v })} />
             <NumField label="Y, м" value={furn.y} step={0.05}
               onChange={(v) => st.getState().updateFurniture(furn.id, { y: v })} />
+            {furn.type === 'lamp' && (
+              <>
+                <NumField label="Яркость, лм" value={lampParams(furn).lumens} step={250} min={0} max={20000}
+                  onChange={(v) => st.getState().updateFurniture(furn.id, { lumens: Math.round(v) })} />
+                <NumField label="Оттенок, K" value={lampParams(furn).temp} step={250} min={1800} max={7500}
+                  onChange={(v) => st.getState().updateFurniture(furn.id, { temp: Math.round(v) })} />
+                <div className="lamp-swatch" style={{ background: kelvinToHex(lampParams(furn).temp) }} />
+                <NumField label="Высота, м" value={lampParams(furn).mount} step={0.1} min={0.3} max={6}
+                  onChange={(v) => st.getState().updateFurniture(furn.id, { mount: v })} />
+                <p className="muted">
+                  Для ориентира: 400 лм — настольная, 1500 — бытовая, 3000–5000 — офисный светильник.
+                  Ниже 3000 K свет тёплый, выше 5000 K — холодный дневной.
+                </p>
+              </>
+            )}
             <NumField label="Поворот, °" value={furn.rotation} step={15} min={-360} max={360}
               onChange={(v) => st.getState().updateFurniture(furn.id, { rotation: ((v % 360) + 360) % 360 })} />
             <p className="muted">R — повернуть, Del — удалить, Ctrl+D — дублировать</p>
