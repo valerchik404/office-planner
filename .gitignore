@@ -1,3 +1,5 @@
 node_modules/
 dist/
 artifact.html
+tsconfig.tsbuildinfo
+.design/

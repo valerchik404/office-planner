@@ -1,8 +1,0 @@
-{"type":"hook.fired","timestamp":"2026-08-31T12:39:06.610Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":22232,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:53:51.737Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":29160,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:53:57.202Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":29160,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:54:01.419Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":29652,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:54:03.230Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":29316,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:54:32.013Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":26560,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:54:41.287Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":22468,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
-{"type":"hook.fired","timestamp":"2026-08-31T12:56:13.322Z","sessionId":"hook","payload":{"hook":"gdd-protected-paths","decision":"allow"},"_meta":{"pid":30704,"host":"DESKTOP-5AKGHN1","source":"event-stream"}}
