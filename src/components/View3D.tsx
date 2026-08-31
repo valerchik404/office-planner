@@ -1,12 +1,15 @@
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Sky } from '@react-three/drei';
 import * as THREE from 'three';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { useStore } from '../store';
 import { makeDate, sunDirection } from '../sun';
 import { openingSpan, wallAngle, wallBoxes, wallLen, wallsBBox } from '../geometry';
 import { fpOf, kelvinToHex, lampParams, metaOf } from '../furniture';
-import type { Furniture, Opening, Wall } from '../types';
+import { getFloorRoughness, getFloorTexture, getWallRoughness, getWallTexture, repeated } from '../textures';
+import type { Furniture, Opening, Pt, Wall } from '../types';
 
 function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
   const L = wallLen(wall);
@@ -52,13 +55,18 @@ function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
           position={[b.off + b.len / 2, (b.y0 + b.y1) / 2, 0]}
         >
           <boxGeometry args={[b.len, b.y1 - b.y0, th]} />
-          <meshStandardMaterial color="#dedad2" roughness={0.9} />
+          <meshStandardMaterial
+            color="#efece5"
+            map={repeated(getWallTexture(), Math.max(1, Math.round(b.len / 2)), Math.max(1, Math.round((b.y1 - b.y0) / 2)))}
+            roughnessMap={repeated(getWallRoughness(), Math.max(1, Math.round(b.len / 2)), Math.max(1, Math.round((b.y1 - b.y0) / 2)))}
+            roughness={1}
+          />
         </mesh>
       ))}
       {glass.map((g) => (
         <mesh key={g.id} position={[g.x, g.y, 0]}>
           <boxGeometry args={[g.w, g.h, 0.05]} />
-          <meshStandardMaterial color="#a8d4f0" transparent opacity={0.25} roughness={0.1} metalness={0.1} />
+          <meshPhysicalMaterial color="#cfe6f7" transparent opacity={0.18} roughness={0.05} metalness={0} transmission={0.6} thickness={0.02} />
         </mesh>
       ))}
     </group>
@@ -247,12 +255,13 @@ function Roof({
 }
 
 function SunLight({
-  position, intensity, color, radius, target,
+  position, intensity, color, radius, distance, target,
 }: {
   position: [number, number, number];
   intensity: number;
   color: string;
-  radius: number;
+  radius: number;   // радиус сцены, м
+  distance: number; // как далеко отведён источник
   target: [number, number, number];
 }) {
   const targetObj = useMemo(() => new THREE.Object3D(), []);
@@ -260,6 +269,8 @@ function SunLight({
     targetObj.position.set(...target);
     targetObj.updateMatrixWorld();
   }, [targetObj, target[0], target[1], target[2]]);
+  const near = Math.max(0.5, distance - radius * 1.3);
+  const far = distance + radius * 1.3;
   return (
     <>
       <directionalLight
@@ -268,19 +279,83 @@ function SunLight({
         intensity={intensity}
         color={color}
         target={targetObj}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-left={-radius * 1.6}
-        shadow-camera-right={radius * 1.6}
-        shadow-camera-top={radius * 1.6}
-        shadow-camera-bottom={-radius * 1.6}
-        shadow-camera-near={1}
-        shadow-camera-far={120}
-        shadow-bias={-0.0004}
+        shadow-mapSize-width={4096}
+        shadow-mapSize-height={4096}
+        shadow-camera-left={-radius}
+        shadow-camera-right={radius}
+        shadow-camera-top={radius}
+        shadow-camera-bottom={-radius}
+        shadow-camera-near={near}
+        shadow-camera-far={far}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.03}
       />
       <primitive object={targetObj} />
     </>
   );
+}
+
+/** Небесный свет, попадающий в комнату через окна (не прямое солнце). */
+function WindowSkyLights({
+  windows, intensity, color,
+}: {
+  windows: { id: string; pos: [number, number, number]; look: [number, number, number]; w: number; h: number }[];
+  intensity: number;
+  color: string;
+}) {
+  if (intensity <= 0.01) return null;
+  return (
+    <>
+      {windows.map((wl) => (
+        <WindowSkyLight key={wl.id} {...wl} intensity={intensity} color={color} />
+      ))}
+    </>
+  );
+}
+
+function WindowSkyLight({
+  pos, look, w, h, intensity, color,
+}: {
+  pos: [number, number, number];
+  look: [number, number, number];
+  w: number;
+  h: number;
+  intensity: number;
+  color: string;
+}) {
+  const ref = useRef<THREE.RectAreaLight>(null);
+  useEffect(() => {
+    ref.current?.lookAt(look[0], look[1], look[2]);
+  }, [look[0], look[1], look[2], pos[0], pos[1], pos[2]]);
+  return (
+    <rectAreaLight
+      ref={ref}
+      position={pos}
+      width={Math.max(0.2, w)}
+      height={Math.max(0.2, h)}
+      intensity={intensity}
+      color={color}
+    />
+  );
+}
+
+/** Мягкое окружение из three (RoomEnvironment) — материалы перестают быть плоскими. */
+function Env() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    RectAreaLightUniformsLib.init();
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = env;
+    scene.environmentIntensity = 0.22;
+    return () => {
+      scene.environment = null;
+      env.dispose();
+      pmrem.dispose();
+    };
+  }, [gl, scene]);
+  return null;
 }
 
 function Scene() {
@@ -297,7 +372,9 @@ function Scene() {
     : { x: 0, z: 0 };
   const extentX = bbox ? bbox.maxX - bbox.minX : 10;
   const extentZ = bbox ? bbox.maxY - bbox.minY : 10;
-  const radius = Math.max(extentX, extentZ) / 2 + 6;
+  // радиус описанной сферы сцены — от него зависят границы камеры теней
+  const sceneR = Math.hypot(extentX, extentZ) / 2 + 4;
+  const lightDist = sceneR * 2.5;
   const ceilH = walls.length ? Math.max(...walls.map((w) => w.height)) : 3;
   const lamps = useMemo(() => furniture.filter((f) => f.type === 'lamp'), [furniture]);
 
@@ -309,13 +386,58 @@ function Scene() {
   const day = sun.altitude > 0;
   const sinAlt = Math.sin(Math.max(0, sun.altitude));
   const dirIntensity = day ? Math.min(1.7, 2.6 * sinAlt + 0.15) : 0;
-  const ambient = day ? 0.35 + 0.3 * Math.min(1, sinAlt * 2.5) : 0.14;
+  const ambient = day ? 0.2 + 0.16 * Math.min(1, sinAlt * 2.5) : 0.09;
+  const skyThroughWindows = day ? 1.6 + 5 * sinAlt : 0.12;
 
+  // источник отводим строго по направлению на солнце: подрезать высоту нельзя,
+  // иначе направление света перестаёт совпадать с реальным
   const lightPos: [number, number, number] = [
-    center.x + sun.dir[0] * 45,
-    Math.max(2, sun.dir[1] * 45),
-    center.z + sun.dir[2] * 45,
+    center.x + sun.dir[0] * lightDist,
+    sun.dir[1] * lightDist,
+    center.z + sun.dir[2] * lightDist,
   ];
+
+  // проёмы как источники рассеянного света с неба
+  const windowLights = useMemo(() => {
+    const out: { id: string; pos: [number, number, number]; look: [number, number, number]; w: number; h: number }[] = [];
+    for (const o of openings) {
+      if (o.type === 'door') continue; // закрытая дверь света не даёт
+      const w = walls.find((x) => x.id === o.wallId);
+      if (!w) continue;
+      const L = wallLen(w);
+      if (L < 0.05) continue;
+      const dx = (w.b.x - w.a.x) / L;
+      const dy = (w.b.y - w.a.y) / L;
+      const span = openingSpan(w, o);
+      const t = (span.start + span.end) / 2;
+      const width = Math.max(0.2, span.end - span.start);
+      const y0 = o.type === 'window' ? o.sillHeight : 0;
+      const height = Math.max(0.2, Math.min(o.height, w.height - y0));
+      const px = w.a.x + dx * t;
+      const pz = w.a.y + dy * t;
+      let nx = -dy;
+      let nz = dx;
+      if ((center.x - px) * nx + (center.z - pz) * nz < 0) { nx = -nx; nz = -nz; }
+      out.push({
+        id: o.id,
+        pos: [px + nx * 0.06, y0 + height / 2, pz + nz * 0.06],
+        look: [px + nx * 3, y0 + height / 2, pz + nz * 3],
+        w: width,
+        h: height,
+      });
+    }
+    // площадные источники дороги в отрисовке — оставляем самые крупные проёмы
+    return out.sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 8);
+  }, [openings, walls, center.x, center.z]);
+
+  const floorMap = useMemo(
+    () => repeated(getFloorTexture(), Math.max(1, Math.round(extentX)), Math.max(1, Math.round(extentZ))),
+    [extentX, extentZ],
+  );
+  const floorRoughMap = useMemo(
+    () => repeated(getFloorRoughness(), Math.max(1, Math.round(extentX)), Math.max(1, Math.round(extentZ))),
+    [extentX, extentZ],
+  );
 
   const northArrow = useMemo(() => {
     const a = (location.northAngle * Math.PI) / 180;
@@ -341,14 +463,21 @@ function Scene() {
         <color attach="background" args={['#0b1020']} />
       )}
 
+      <Env />
       <ambientLight intensity={ambient} />
-      <hemisphereLight intensity={day ? 0.35 : 0.08} color="#cfe4ff" groundColor="#8a7a5f" />
+      <hemisphereLight intensity={day ? 0.22 : 0.06} color="#cfe4ff" groundColor="#8a7a5f" />
+      <WindowSkyLights
+        windows={windowLights}
+        intensity={skyThroughWindows}
+        color={day ? "#dbe9ff" : "#93a6c4"}
+      />
       {day && (
         <SunLight
           position={lightPos}
           intensity={dirIntensity}
           color={sinAlt < 0.2 ? '#ffc48a' : '#fff4e0'}
-          radius={radius}
+          radius={sceneR}
+          distance={lightDist}
           target={[center.x, 0, center.z]}
         />
       )}
@@ -362,7 +491,12 @@ function Scene() {
       {bbox && (
         <mesh receiveShadow position={[center.x, -0.05, center.z]}>
           <boxGeometry args={[extentX + 0.8, 0.1, extentZ + 0.8]} />
-          <meshStandardMaterial color="#cec2a8" roughness={0.9} />
+          <meshStandardMaterial
+            color="#ded7c7"
+            map={floorMap}
+            roughnessMap={floorRoughMap}
+            roughness={1}
+          />
         </mesh>
       )}
 
@@ -392,7 +526,12 @@ function Scene() {
 export default function View3D() {
   return (
     <div className="view3d">
-      <Canvas shadows="soft" camera={{ position: [16, 12, 18], fov: 50 }}>
+      <Canvas
+        shadows="soft"
+        dpr={[1, 2]}
+        gl={{ antialias: true, toneMappingExposure: 1.05 }}
+        camera={{ position: [16, 12, 18], fov: 50 }}
+      >
         <Scene />
       </Canvas>
     </div>
