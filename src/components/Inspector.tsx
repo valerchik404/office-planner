@@ -46,6 +46,7 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
+  const readOnly = useStore((s) => s.readOnly);
   const wall = selection?.kind === 'wall' ? walls.find((w) => w.id === selection.id) : null;
   const opening = selection?.kind === 'opening' ? openings.find((o) => o.id === selection.id) : null;
   const furn = selection?.kind === 'furniture' ? furniture.find((f) => f.id === selection.id) : null;
@@ -81,6 +82,25 @@ export default function Inspector({ onOpenLocation }: { onOpenLocation: () => vo
       }
     });
   };
+
+  if (readOnly) {
+    return (
+      <aside className="inspector">
+        <section>
+          <h3>Режим просмотра</h3>
+          <p className="muted">
+            Вы смотрите проект по ссылке для просмотра. Менять план может только редактор —
+            попросите у автора ссылку для редактирования.
+          </p>
+          <p className="muted">Солнце, дату и время крутить можно — это не влияет на общий план.</p>
+        </section>
+        <section>
+          <h3>Проект</h3>
+          <button onClick={onExport}>Экспорт JSON</button>
+        </section>
+      </aside>
+    );
+  }
 
   return (
     <aside className="inspector">

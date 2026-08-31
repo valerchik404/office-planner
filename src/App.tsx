@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store';
 import { buildShareUrl, clearPlanFromUrl, readSharedPlan } from './share';
+import { collabAvailable, joinRoom, parseRoomHash, useCollab } from './collab';
+import { listProjects } from './projects';
+import ProjectsModal from './components/ProjectsModal';
+import RoomModal from './components/RoomModal';
 import Toolbar from './components/Toolbar';
 import Editor2D from './components/Editor2D';
 import View3D from './components/View3D';
@@ -22,13 +26,31 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [sharedPlan, setSharedPlan] = useState<ReturnType<typeof readSharedPlan>>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [showProjects, setShowProjects] = useState(false);
+  const [showRoom, setShowRoom] = useState(false);
+  const roomId = useCollab((s) => s.roomId);
+  const peers = useCollab((s) => s.peers);
+  const projectName = useCollab((s) => s.projectName);
+  const collabError = useCollab((s) => s.error);
+  const readOnly = useStore((s) => s.readOnly);
 
-  // Открытие плана, переданного ссылкой
+  // Открытие комнаты или плана, переданных ссылкой (при загрузке и при смене хэша)
   useEffect(() => {
-    const shared = readSharedPlan();
-    if (!shared) return;
-    clearPlanFromUrl();
-    setSharedPlan(shared);
+    const handle = () => {
+      const room = parseRoomHash();
+      if (room && collabAvailable) {
+        const known = listProjects().find((p) => p.id === room.roomId);
+        void joinRoom(room.roomId, room.token ?? known?.token);
+        return;
+      }
+      const shared = readSharedPlan();
+      if (!shared) return;
+      clearPlanFromUrl();
+      setSharedPlan(shared);
+    };
+    handle();
+    window.addEventListener('hashchange', handle);
+    return () => window.removeEventListener('hashchange', handle);
   }, []);
 
   const onShare = async () => {
@@ -57,7 +79,16 @@ export default function App() {
             </button>
           ))}
         </div>
+        {readOnly && <span className="readonly-chip">👁 просмотр</span>}
         <span className="header-spacer" />
+        {collabAvailable && (
+          <button onClick={() => setShowProjects(true)}>📁 Проекты</button>
+        )}
+        {roomId && (
+          <button onClick={() => setShowRoom(true)} title={collabError || projectName}>
+            👥 {peers || 1} · {projectName || 'проект'}
+          </button>
+        )}
         <button onClick={onShare}>{copied ? '✅ Ссылка скопирована' : '🔗 Поделиться'}</button>
         <button onClick={() => setShowLocation(true)}>📍 Локация</button>
       </header>
@@ -74,6 +105,8 @@ export default function App() {
       <SunControls />
 
       {showLocation && <LocationModal onClose={() => setShowLocation(false)} />}
+      {showProjects && <ProjectsModal onClose={() => setShowProjects(false)} />}
+      {showRoom && roomId && <RoomModal onClose={() => setShowRoom(false)} />}
 
       {sharedPlan && (
         <div className="modal-overlay">

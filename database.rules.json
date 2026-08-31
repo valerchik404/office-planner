@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "rooms": {
+      "$room": {
+        "secret": {
+          ".read": false,
+          ".write": "!data.exists()"
+        },
+        "editors": {
+          ".read": false,
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid && newData.val() === root.child('rooms').child($room).child('secret').val()"
+          }
+        },
+        "meta": {
+          ".read": true,
+          ".write": "auth != null && root.child('rooms').child($room).child('editors').child(auth.uid).exists()"
+        },
+        "plan": {
+          ".read": true,
+          ".write": "auth != null && root.child('rooms').child($room).child('editors').child(auth.uid).exists()"
+        },
+        "underlay": {
+          ".read": true,
+          ".write": "auth != null && root.child('rooms').child($room).child('editors').child(auth.uid).exists()"
+        },
+        "presence": {
+          ".read": true,
+          "$sid": {
+            ".write": "auth != null"
+          }
+        }
+      }
+    }
+  }
+}

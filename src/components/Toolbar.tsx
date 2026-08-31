@@ -14,6 +14,7 @@ const TOOLS: { id: Tool; icon: string; label: string }[] = [
 export default function Toolbar() {
   const tool = useStore((s) => s.tool);
   const setTool = useStore((s) => s.setTool);
+  const readOnly = useStore((s) => s.readOnly);
   return (
     <aside className="toolbar">
       {TOOLS.map((t) => (
@@ -21,7 +22,8 @@ export default function Toolbar() {
           key={t.id}
           className={tool === t.id ? 'tool active' : 'tool'}
           onClick={() => setTool(t.id)}
-          title={t.label}
+          disabled={readOnly && t.id !== 'select'}
+          title={readOnly && t.id !== 'select' ? 'Недоступно в режиме просмотра' : t.label}
         >
           <span className="tool-icon">{t.icon}</span>
           <span className="tool-label">{t.label}</span>

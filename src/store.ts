@@ -18,7 +18,9 @@ interface AppState extends ProjectData {
   tool: Tool;
   viewMode: ViewMode;
   selection: Selection | null;
+  readOnly: boolean;
 
+  setReadOnly: (v: boolean) => void;
   setTool: (t: Tool) => void;
   setViewMode: (m: ViewMode) => void;
   setSelection: (s: Selection | null) => void;
@@ -102,7 +104,9 @@ export const useStore = create<AppState>()(
       tool: 'select',
       viewMode: 'split',
       selection: null,
+      readOnly: false,
 
+      setReadOnly: (readOnly) => set({ readOnly, tool: 'select' }),
       setTool: (tool) => set({ tool, selection: null }),
       setViewMode: (viewMode) => set({ viewMode }),
       setSelection: (selection) => set({ selection }),

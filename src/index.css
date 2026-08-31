@@ -234,6 +234,45 @@ input[type='range'] { accent-color: #e8a33d; }
 }
 .search-results button:hover { background: #333742; }
 
+.readonly-chip {
+  background: #4a3d1f;
+  border: 1px solid #7a6432;
+  color: #ecd9a0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.project-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.project-list li {
+  display: flex;
+  gap: 6px;
+}
+.project-list li.current .project-open { border-color: #5c82ad; }
+.project-open {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 10px;
+}
+.project-name { font-weight: 600; }
+
+.copy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .location-current {
   display: flex;
   align-items: center;

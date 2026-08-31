@@ -70,6 +70,12 @@ export default function Editor2D() {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  const capture = (pointerId: number) => {
+    try {
+      svgRef.current!.setPointerCapture(pointerId);
+    } catch { /* синтетические события и экзотические устройства */ }
+  };
+
   const s2w = (clientX: number, clientY: number): Pt => {
     const rect = svgRef.current!.getBoundingClientRect();
     return {
@@ -123,12 +129,20 @@ export default function Editor2D() {
     const p = s2w(e.clientX, e.clientY);
     if (e.button === 1 || e.button === 2) {
       dragRef.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy };
-      svgRef.current!.setPointerCapture(e.pointerId);
+      capture(e.pointerId);
       if (e.button === 2 && chainStart) setChainStart(null);
       return;
     }
     if (e.button !== 0) return;
-    svgRef.current!.setPointerCapture(e.pointerId);
+    capture(e.pointerId);
+
+    if (st.readOnly) {
+      // режим просмотра: только выбор для инспектора и панорама
+      const hit = hitTest(p);
+      st.setSelection(hit ? { kind: hit.kind, id: hit.id } : null);
+      if (!hit) dragRef.current = { kind: 'pan', sx: e.clientX, sy: e.clientY, cx: view.cx, cy: view.cy };
+      return;
+    }
 
     if (tool === 'wall') {
       const sp = snapPoint(p, true);
@@ -227,6 +241,8 @@ export default function Editor2D() {
       if (e.key === 'Escape') {
         setChainStart(null);
         st.setSelection(null);
+      } else if (st.readOnly) {
+        return;
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         st.deleteSelected();
       } else if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') {
@@ -257,7 +273,9 @@ export default function Editor2D() {
 
   const px = (n: number) => n / view.scale; // n пикселей в мировых единицах
 
-  const selectedWall = selection?.kind === 'wall' ? walls.find((w) => w.id === selection.id) : null;
+  const readOnly = useStore((s) => s.readOnly);
+  const selectedWall =
+    selection?.kind === 'wall' && !readOnly ? walls.find((w) => w.id === selection.id) : null;
 
   return (
     <div ref={wrapRef} className="editor2d">
@@ -379,7 +397,7 @@ export default function Editor2D() {
                 style={{ cursor: 'move' }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  svgRef.current!.setPointerCapture(e.pointerId);
+                  capture(e.pointerId);
                   dragRef.current = { kind: 'endpoint', wallId: selectedWall.id, end };
                 }}
               />
@@ -399,7 +417,10 @@ export default function Editor2D() {
       </div>
 
       <div className="editor-hint">
-        {tool === 'wall'
+        {readOnly
+          ? 'Режим просмотра — менять план может только редактор'
+          : null}
+        {!readOnly && (tool === 'wall'
           ? chainStart
             ? 'Клик — следующая точка · двойной клик / Esc — закончить'
             : 'Клик — начать стену'
@@ -407,7 +428,7 @@ export default function Editor2D() {
             ? 'Клик — выбрать · перетаскивание — двигать · R — повернуть · Del — удалить'
             : tool === 'desk' || tool === 'chair'
               ? 'Клик — поставить'
-              : 'Клик по стене — добавить проём'}
+              : 'Клик по стене — добавить проём')}
         {hoverPt && `  |  x: ${hoverPt.x.toFixed(2)}  y: ${hoverPt.y.toFixed(2)}`}
       </div>
     </div>
