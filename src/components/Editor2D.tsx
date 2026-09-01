@@ -51,10 +51,20 @@ export default function Editor2D() {
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  const sunHours = useMemo(() => {
-    if (!showSun) return null;
-    const seats = furniture.filter((f) => isSeat(f.type));
-    return computeSunHours(seats, walls, openings, location, dateISO);
+  // расчёт тяжёлый, поэтому не в рендере: во время перетаскивания мебели
+  // updateFurniture срабатывает на каждое движение мыши
+  const [sunHours, setSunHours] = useState<Map<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!showSun) {
+      setSunHours(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      const seats = furniture.filter((f) => isSeat(f.type));
+      setSunHours(computeSunHours(seats, walls, openings, location, dateISO));
+    }, 180);
+    return () => clearTimeout(timer);
   }, [showSun, furniture, walls, openings, location, dateISO]);
 
   useEffect(() => {

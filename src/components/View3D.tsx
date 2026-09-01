@@ -1,5 +1,5 @@
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Sky } from '@react-three/drei';
+import { OrbitControls, RoundedBox, Sky } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEffect, useMemo, useRef } from 'react';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -8,7 +8,10 @@ import { useStore } from '../store';
 import { makeDate, sunDirection } from '../sun';
 import { openingSpan, wallAngle, wallBoxes, wallLen, wallsBBox } from '../geometry';
 import { fpOf, kelvinToHex, lampParams, metaOf } from '../furniture';
-import { getFloorRoughness, getFloorTexture, getWallRoughness, getWallTexture, repeated } from '../textures';
+import {
+  getFloorBump, getFloorRoughness, getFloorTexture,
+  getWallBump, getWallRoughness, getWallTexture, repeated,
+} from '../textures';
 import type { Furniture, Opening, Pt, Wall } from '../types';
 
 function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
@@ -56,12 +59,39 @@ function WallMesh({ wall, openings }: { wall: Wall; openings: Opening[] }) {
         >
           <boxGeometry args={[b.len, b.y1 - b.y0, th]} />
           <meshStandardMaterial
-            color="#efece5"
+            color="#f1eee7"
             map={repeated(getWallTexture(), Math.max(1, Math.round(b.len / 2)), Math.max(1, Math.round((b.y1 - b.y0) / 2)))}
             roughnessMap={repeated(getWallRoughness(), Math.max(1, Math.round(b.len / 2)), Math.max(1, Math.round((b.y1 - b.y0) / 2)))}
-            roughness={1}
+            bumpMap={repeated(getWallBump(), Math.max(1, Math.round(b.len)), Math.max(1, Math.round(b.y1 - b.y0)))}
+            bumpScale={0.35}
+            roughness={0.95}
           />
         </mesh>
+      ))}
+
+      {/* плинтус — только там, где стена доходит до пола */}
+      {boxes.filter((b) => b.y0 < 0.01).map((b, i) => (
+        <mesh key={"skirt" + i} castShadow receiveShadow position={[b.off + b.len / 2, 0.06, 0]}>
+          <boxGeometry args={[b.len, 0.12, th + 0.03]} />
+          <meshStandardMaterial color="#ddd8cc" roughness={0.55} />
+        </mesh>
+      ))}
+
+      {/* оконные рамы */}
+      {glass.map((g) => (
+        <group key={"frame" + g.id} position={[g.x, g.y, 0]}>
+          {[
+            { p: [0, g.h / 2 - 0.035, 0], s: [g.w, 0.07, th + 0.02] },
+            { p: [0, -g.h / 2 + 0.035, 0], s: [g.w, 0.07, th + 0.02] },
+            { p: [-g.w / 2 + 0.035, 0, 0], s: [0.07, g.h, th + 0.02] },
+            { p: [g.w / 2 - 0.035, 0, 0], s: [0.07, g.h, th + 0.02] },
+          ].map((part, i) => (
+            <mesh key={i} castShadow receiveShadow position={part.p as [number, number, number]}>
+              <boxGeometry args={part.s as [number, number, number]} />
+              <meshStandardMaterial color="#f7f5f0" roughness={0.45} />
+            </mesh>
+          ))}
+        </group>
       ))}
       {glass.map((g) => (
         <mesh key={g.id} position={[g.x, g.y, 0]}>
@@ -84,10 +114,9 @@ function FurnitureMesh({ f }: { f: Furniture }) {
     const lz = d / 2 - 0.06;
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow receiveShadow position={[0, 0.73, 0]}>
-          <boxGeometry args={[w, 0.04, d]} />
-          <meshStandardMaterial color="#b98d5f" roughness={0.7} />
-        </mesh>
+        <RoundedBox castShadow receiveShadow position={[0, 0.73, 0]} args={[w, 0.045, d]} radius={0.018} smoothness={3}>
+          <meshStandardMaterial color="#bb9265" roughness={0.55} metalness={0.02} />
+        </RoundedBox>
         {[[-lx, -lz], [lx, -lz], [-lx, lz], [lx, lz]].map(([x, z], i) => (
           <mesh key={i} castShadow position={[x, 0.355, z]}>
             <boxGeometry args={[0.05, 0.71, 0.05]} />
@@ -103,10 +132,16 @@ function FurnitureMesh({ f }: { f: Furniture }) {
     const seatH = f.type === 'armchair' ? 0.4 : 0.45;
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow receiveShadow position={[0, seatH, 0]}>
-          <boxGeometry args={[w, f.type === 'armchair' ? 0.2 : 0.06, d]} />
+        <RoundedBox
+          castShadow
+          receiveShadow
+          position={[0, seatH, 0]}
+          args={[w, f.type === 'armchair' ? 0.2 : 0.07, d]}
+          radius={f.type === 'armchair' ? 0.06 : 0.02}
+          smoothness={3}
+        >
           <meshStandardMaterial color="#5f7d59" roughness={0.85} />
-        </mesh>
+        </RoundedBox>
         <mesh castShadow receiveShadow position={[0, seatH + 0.3, d / 2 - 0.05]}>
           <boxGeometry args={[w, 0.55, 0.1]} />
           <meshStandardMaterial color="#5f7d59" roughness={0.85} />
@@ -131,10 +166,9 @@ function FurnitureMesh({ f }: { f: Furniture }) {
   if (f.type === 'sofa') {
     return (
       <group position={pos} rotation={[0, rot, 0]}>
-        <mesh castShadow receiveShadow position={[0, 0.22, 0]}>
-          <boxGeometry args={[w, 0.44, d]} />
+        <RoundedBox castShadow receiveShadow position={[0, 0.22, 0]} args={[w, 0.44, d]} radius={0.07} smoothness={3}>
           <meshStandardMaterial color="#7d5f74" roughness={0.9} />
-        </mesh>
+        </RoundedBox>
         <mesh castShadow receiveShadow position={[0, 0.55, d / 2 - 0.09]}>
           <boxGeometry args={[w, 0.5, 0.18]} />
           <meshStandardMaterial color="#7d5f74" roughness={0.9} />
@@ -289,6 +323,7 @@ function SunLight({
         shadow-camera-far={far}
         shadow-bias={-0.0002}
         shadow-normalBias={0.03}
+        shadow-radius={2}
       />
       <primitive object={targetObj} />
     </>
@@ -375,7 +410,7 @@ function Scene() {
   // радиус описанной сферы сцены — от него зависят границы камеры теней
   const sceneR = Math.hypot(extentX, extentZ) / 2 + 4;
   const lightDist = sceneR * 2.5;
-  const ceilH = walls.length ? Math.max(...walls.map((w) => w.height)) : 3;
+  const ceilH = walls.reduce((m, w) => Math.max(m, w.height), 0) || 3;
   const lamps = useMemo(() => furniture.filter((f) => f.type === 'lamp'), [furniture]);
 
   const sun = useMemo(() => {
@@ -387,7 +422,7 @@ function Scene() {
   const sinAlt = Math.sin(Math.max(0, sun.altitude));
   const dirIntensity = day ? Math.min(1.7, 2.6 * sinAlt + 0.15) : 0;
   const ambient = day ? 0.2 + 0.16 * Math.min(1, sinAlt * 2.5) : 0.09;
-  const skyThroughWindows = day ? 1.6 + 5 * sinAlt : 0.12;
+  const skyThroughWindows = day ? 0.9 + 2.2 * sinAlt : 0.08;
 
   // источник отводим строго по направлению на солнце: подрезать высоту нельзя,
   // иначе направление света перестаёт совпадать с реальным
@@ -401,7 +436,8 @@ function Scene() {
   const windowLights = useMemo(() => {
     const out: { id: string; pos: [number, number, number]; look: [number, number, number]; w: number; h: number }[] = [];
     for (const o of openings) {
-      if (o.type === 'door') continue; // закрытая дверь света не даёт
+      // светит только окно: внутренний проём в перегородке улицы не видит
+      if (o.type !== 'window') continue;
       const w = walls.find((x) => x.id === o.wallId);
       if (!w) continue;
       const L = wallLen(w);
@@ -420,8 +456,9 @@ function Scene() {
       if ((center.x - px) * nx + (center.z - pz) * nz < 0) { nx = -nx; nz = -nz; }
       out.push({
         id: o.id,
-        pos: [px + nx * 0.06, y0 + height / 2, pz + nz * 0.06],
-        look: [px + nx * 3, y0 + height / 2, pz + nz * 3],
+        // источник отодвинут внутрь: вплотную к стене он выжигает откосы
+        pos: [px + nx * 0.4, y0 + height / 2, pz + nz * 0.4],
+        look: [px + nx * 4, y0 + height / 2, pz + nz * 4],
         w: width,
         h: height,
       });
@@ -436,6 +473,10 @@ function Scene() {
   );
   const floorRoughMap = useMemo(
     () => repeated(getFloorRoughness(), Math.max(1, Math.round(extentX)), Math.max(1, Math.round(extentZ))),
+    [extentX, extentZ],
+  );
+  const floorBumpMap = useMemo(
+    () => repeated(getFloorBump(), Math.max(1, Math.round(extentX)), Math.max(1, Math.round(extentZ))),
     [extentX, extentZ],
   );
 
@@ -490,12 +531,15 @@ function Scene() {
       {/* плита пола */}
       {bbox && (
         <mesh receiveShadow position={[center.x, -0.05, center.z]}>
-          <boxGeometry args={[extentX + 0.8, 0.1, extentZ + 0.8]} />
+          <boxGeometry args={[extentX + 0.2, 0.1, extentZ + 0.2]} />
           <meshStandardMaterial
-            color="#ded7c7"
+            color="#e4ddcd"
             map={floorMap}
             roughnessMap={floorRoughMap}
-            roughness={1}
+            bumpMap={floorBumpMap}
+            bumpScale={0.5}
+            roughness={0.62}
+            metalness={0.02}
           />
         </mesh>
       )}

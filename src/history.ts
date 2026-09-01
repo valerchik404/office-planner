@@ -58,7 +58,7 @@ export function initHistory(): void {
 
 function apply(snap: Snap): void {
   applying = true;
-  useStore.setState({ ...snap, selection: null });
+  useStore.setState({ ...snap, selection: null, multiSelect: [] });
   applying = false;
   current = snap;
   lastPush = 0;
