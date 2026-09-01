@@ -96,3 +96,124 @@ export function sunHoursColor(hours: number): string {
   if (hours < 6) return '#ffb254';
   return '#ff8f42';
 }
+
+export interface SunGrid {
+  x0: number;
+  y0: number;
+  cell: number;
+  cols: number;
+  rows: number;
+  /** часы прямого солнца в ячейке; -1 — точка вне помещения */
+  hours: Float32Array;
+  max: number;
+}
+
+/** Точка считается «внутри», если со всех четырёх сторон есть стена. */
+function enclosed(p: Pt, walls: Wall[]): boolean {
+  let px = false, nx = false, py = false, ny = false;
+  for (const w of walls) {
+    const ax = w.a.x, ay = w.a.y, bx = w.b.x, by = w.b.y;
+    if ((ay - p.y) * (by - p.y) < 0) {
+      const t = (p.y - ay) / (by - ay);
+      const x = ax + (bx - ax) * t;
+      if (x > p.x) px = true;
+      else nx = true;
+    }
+    if ((ax - p.x) * (bx - p.x) < 0) {
+      const t = (p.x - ax) / (bx - ax);
+      const y = ay + (by - ay) * t;
+      if (y > p.y) py = true;
+      else ny = true;
+    }
+    if (px && nx && py && ny) return true;
+  }
+  return false;
+}
+
+/** Карта прямого солнца по всей площади плана на высоте стола. */
+export function computeSunGrid(
+  walls: Wall[],
+  openings: Opening[],
+  location: GeoLocation,
+  dateISO: string,
+  maxCells = 3600,
+): SunGrid | null {
+  const validWalls = walls.filter((w) => wallLen(w) > 0.05);
+  if (validWalls.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const w of validWalls) {
+    minX = Math.min(minX, w.a.x, w.b.x);
+    maxX = Math.max(maxX, w.a.x, w.b.x);
+    minY = Math.min(minY, w.a.y, w.b.y);
+    maxY = Math.max(maxY, w.a.y, w.b.y);
+  }
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  // размер ячейки подбираем так, чтобы расчёт оставался быстрым
+  const cell = Math.max(0.35, Math.sqrt((width * height) / maxCells));
+  const cols = Math.max(1, Math.ceil(width / cell));
+  const rows = Math.max(1, Math.ceil(height / cell));
+
+  const openingsByWall = new Map<string, Opening[]>();
+  for (const o of openings) {
+    const list = openingsByWall.get(o.wallId);
+    if (list) list.push(o);
+    else openingsByWall.set(o.wallId, [o]);
+  }
+
+  const hours = new Float32Array(cols * rows);
+  const inside = new Uint8Array(cols * rows);
+  const pts: Pt[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const p = { x: minX + (c + 0.5) * cell, y: minY + (r + 0.5) * cell };
+      const idx = r * cols + c;
+      pts.push(p);
+      inside[idx] = enclosed(p, validWalls) ? 1 : 0;
+      if (!inside[idx]) hours[idx] = -1;
+    }
+  }
+
+  let max = 0;
+  for (let min = 0; min < 1440; min += STEP_MIN) {
+    const date = makeDate(dateISO, min, location.lat, location.lng);
+    const sun = sunDirection(date, location.lat, location.lng, location.northAngle);
+    if (sun.altitude <= 0.02) continue;
+    const hLen = Math.hypot(sun.dir[0], sun.dir[2]);
+    if (hLen < 1e-6) continue;
+    const dir2: Pt = { x: sun.dir[0] / hLen, y: sun.dir[2] / hLen };
+    const slope = sun.dir[1] / hLen;
+    for (let i = 0; i < pts.length; i++) {
+      if (!inside[i]) continue;
+      if (rayPasses(pts[i], SEAT_HEIGHT, dir2, slope, validWalls, openingsByWall)) {
+        hours[i] += STEP_MIN / 60;
+        if (hours[i] > max) max = hours[i];
+      }
+    }
+  }
+  return { x0: minX, y0: minY, cell, cols, rows, hours, max };
+}
+
+/** Цвет ячейки карты: от прохладного синего (тень) к оранжевому (много солнца). */
+export function heatColor(h: number, max: number): [number, number, number, number] {
+  if (h < 0) return [0, 0, 0, 0];
+  const stops: [number, number, number, number][] = [
+    [64, 104, 150, 90],
+    [126, 176, 196, 105],
+    [236, 214, 132, 130],
+    [240, 168, 74, 160],
+    [226, 96, 52, 185],
+  ];
+  const t = max <= 0.01 ? 0 : Math.max(0, Math.min(1, h / max));
+  const f = t * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(f));
+  const k = f - i;
+  const a = stops[i];
+  const b = stops[i + 1];
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * k),
+    Math.round(a[1] + (b[1] - a[1]) * k),
+    Math.round(a[2] + (b[2] - a[2]) * k),
+    Math.round(a[3] + (b[3] - a[3]) * k),
+  ];
+}

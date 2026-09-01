@@ -4,7 +4,7 @@ import type { Pt, Wall } from '../types';
 import { openingSpan, projectOnWall, snap, wallAngle, wallLen } from '../geometry';
 import { redo, undo } from '../history';
 import { FURNITURE_TYPES, fpOf, isSeat, kelvinToHex, lampParams, metaOf } from '../furniture';
-import { computeSunHours, sunHoursColor } from '../sunlight';
+import { computeSunGrid, computeSunHours, heatColor, sunHoursColor } from '../sunlight';
 import type { FurnitureType } from '../types';
 
 const OPENING_DEFAULTS = {
@@ -45,6 +45,8 @@ export default function Editor2D() {
   const [hoverPt, setHoverPt] = useState<Pt | null>(null);
   const [lenInput, setLenInput] = useState('');
   const [marquee, setMarquee] = useState<{ a: Pt; b: Pt } | null>(null);
+  const [heat, setHeat] = useState<{ url: string; x: number; y: number; w: number; h: number; max: number } | null>(null);
+  const [heatBusy, setHeatBusy] = useState(false);
   const dragRef = useRef<Drag | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -54,6 +56,43 @@ export default function Editor2D() {
     const seats = furniture.filter((f) => isSeat(f.type));
     return computeSunHours(seats, walls, openings, location, dateISO);
   }, [showSun, furniture, walls, openings, location, dateISO]);
+
+  useEffect(() => {
+    if (!showSun) {
+      setHeat(null);
+      setHeatBusy(false);
+      return;
+    }
+    setHeatBusy(true);
+    const timer = setTimeout(() => {
+      const g = computeSunGrid(walls, openings, location, dateISO);
+      if (!g) {
+        setHeat(null);
+        setHeatBusy(false);
+        return;
+      }
+      const cv = document.createElement('canvas');
+      cv.width = g.cols;
+      cv.height = g.rows;
+      const ctx = cv.getContext('2d');
+      if (!ctx) {
+        setHeatBusy(false);
+        return;
+      }
+      const img = ctx.createImageData(g.cols, g.rows);
+      for (let i = 0; i < g.cols * g.rows; i++) {
+        const [r, gg, b, a] = heatColor(g.hours[i], g.max);
+        img.data[i * 4] = r;
+        img.data[i * 4 + 1] = gg;
+        img.data[i * 4 + 2] = b;
+        img.data[i * 4 + 3] = a;
+      }
+      ctx.putImageData(img, 0, 0);
+      setHeat({ url: cv.toDataURL(), x: g.x0, y: g.y0, w: g.cols * g.cell, h: g.rows * g.cell, max: g.max });
+      setHeatBusy(false);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [showSun, walls, openings, location, dateISO]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -511,6 +550,18 @@ export default function Editor2D() {
             />
           )}
 
+          {heat && (
+            <image
+              href={heat.url}
+              x={heat.x}
+              y={heat.y}
+              width={heat.w}
+              height={heat.h}
+              preserveAspectRatio="none"
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+
           {/* стены */}
           {walls.map((w) => {
             const L = wallLen(w);
@@ -732,6 +783,20 @@ export default function Editor2D() {
           </g>
         </svg>
       </div>
+
+      {showSun && (
+        <div className="sun-legend">
+          <div className="sun-legend-title">
+            Прямое солнце за день{heatBusy ? ' · считаю…' : ''}
+          </div>
+          <div className="sun-legend-bar" />
+          <div className="sun-legend-scale">
+            <span>0 ч</span>
+            <span>{(heat?.max ?? 0).toFixed(1)} ч</span>
+          </div>
+          <div className="sun-legend-note">на высоте стола, 0.75 м</div>
+        </div>
+      )}
 
       <div className="editor-hint">
         {readOnly
